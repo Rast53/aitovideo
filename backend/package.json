@@ -1,0 +1,32 @@
+{
+  "name": "aitovideo-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Backend for AitoVideo - Telegram Mini App",
+  "main": "src/api/index.ts",
+  "scripts": {
+    "start": "tsx src/api/index.ts",
+    "dev": "tsx watch src/api/index.ts",
+    "bot": "tsx src/bot/index.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "node-telegram-bot-api": "^0.64.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.6.1",
+    "@types/node-telegram-bot-api": "^0.64.11",
+    "nodemon": "^3.0.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

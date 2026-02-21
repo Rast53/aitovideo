@@ -1,0 +1,43 @@
+# Dependencies (will be installed in container)
+node_modules/
+**/node_modules/
+
+# Build outputs (rebuilt in container)
+dist/
+build/
+
+# Git
+.git/
+.gitignore
+
+# Environment files (passed via docker-compose or runtime)
+.env
+.env.local
+.env.*.local
+
+# Database (mounted as volume)
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# Logs
+logs/
+*.log
+
+# Documentation
+*.md
+!README.md
+
+# IDE
+.idea/
+.vscode/
+
+# Docker files (not needed in context)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# OS files
+.DS_Store
+Thumbs.db
