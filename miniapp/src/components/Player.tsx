@@ -15,9 +15,23 @@ interface PlayerProps {
   onMarkWatched?: (id: number, isWatched: boolean) => void;
 }
 
+type ExtendedDocument = Document & {
+  webkitFullscreenElement?: Element;
+  webkitExitFullscreen?: () => void;
+};
+
+type ExtendedHTMLElement = HTMLElement & {
+  webkitRequestFullscreen?: () => void;
+};
+
+type ExtendedScreenOrientation = ScreenOrientation & {
+  lock?: (orientation: string) => Promise<void>;
+  unlock?: () => void;
+};
+
 export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps) {
-  const [loading, setLoading] = useState<boolean>(true);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true);
+  const [isCinemaMode, setIsCinemaMode] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -27,45 +41,84 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
     }
   }, []);
 
+  // Отслеживаем выход из нативного fullscreen (например, через кнопку назад)
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+    const handleFsChange = () => {
+      const doc = document as ExtendedDocument;
+      const isNativeFsActive = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+      if (!isNativeFsActive && isCinemaMode) {
+        // нативный fullscreen закрылся, но кино-режим (скрытые панели) оставляем
+      }
     };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
     return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
     };
-  }, []);
+  }, [isCinemaMode]);
 
-  const toggleFullscreen = async () => {
+  const enterCinemaMode = async () => {
+    // Уровень 1: Telegram WebApp requestFullscreen (Bot API 7.7+)
+    if (window.Telegram?.WebApp?.requestFullscreen) {
+      try {
+        window.Telegram.WebApp.requestFullscreen();
+      } catch {
+        // не поддерживается в данной версии
+      }
+    }
+
+    // Уровень 2: Нативный Fullscreen API на обёртке видео
+    const el = wrapperRef.current as ExtendedHTMLElement | null;
+    if (el && !document.fullscreenElement) {
+      try {
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+          el.webkitRequestFullscreen();
+        }
+      } catch {
+        // WebView не поддерживает Fullscreen API
+      }
+    }
+
+    // Уровень 3: Блокировка ориентации в landscape
     try {
-      if (!document.fullscreenElement) {
-        // Сначала пробуем Telegram WebApp requestFullscreen (Bot API 7.7+)
-        if (window.Telegram?.WebApp?.requestFullscreen) {
-          window.Telegram.WebApp.requestFullscreen();
-          return;
-        }
-        // Запрашиваем fullscreen на обёртке или iframe
-        const element = wrapperRef.current ?? iframeRef.current;
-        if (element) {
-          if (element.requestFullscreen) {
-            await element.requestFullscreen();
-          } else if ((element as HTMLElement & { webkitRequestFullscreen?: () => void }).webkitRequestFullscreen) {
-            (element as HTMLElement & { webkitRequestFullscreen: () => void }).webkitRequestFullscreen();
-          }
-        }
-      } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen) {
-          (document as Document & { webkitExitFullscreen: () => void }).webkitExitFullscreen();
-        }
+      const orientation = screen.orientation as ExtendedScreenOrientation;
+      if (orientation?.lock) {
+        await orientation.lock('landscape');
       }
     } catch {
-      // Fullscreen API недоступен в данном окружении
+      // Screen Orientation API недоступен
     }
+
+    // Уровень 4 (всегда): скрываем наши панели — кино-режим
+    setIsCinemaMode(true);
+  };
+
+  const exitCinemaMode = async () => {
+    // Выходим из нативного fullscreen если активен
+    const doc = document as ExtendedDocument;
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch { /* игнорируем */ }
+    } else if (doc.webkitFullscreenElement && doc.webkitExitFullscreen) {
+      try { doc.webkitExitFullscreen(); } catch { /* игнорируем */ }
+    }
+
+    // Выходим из Telegram fullscreen (Bot API 7.7+)
+    if (window.Telegram?.WebApp?.exitFullscreen) {
+      try { window.Telegram.WebApp.exitFullscreen(); } catch { /* игнорируем */ }
+    }
+
+    // Снимаем блокировку ориентации
+    try {
+      const orientation = screen.orientation as ExtendedScreenOrientation;
+      if (orientation?.unlock) {
+        orientation.unlock();
+      }
+    } catch { /* игнорируем */ }
+
+    setIsCinemaMode(false);
   };
 
   if (!video) {
@@ -80,10 +133,7 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
         return `https://rutube.ru/play/embed/${video.external_id}`;
       case 'vk': {
         const [oid, vid] = video.external_id.split('_');
-        if (!oid || !vid) {
-          return null;
-        }
-
+        if (!oid || !vid) return null;
         return `https://vk.com/video_ext.php?oid=${oid}&id=${vid}&hd=2&autoplay=1`;
       }
       default:
@@ -95,25 +145,37 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
   const isWatched = Boolean(video.is_watched);
 
   return (
-    <div className="player-overlay" onClick={onClose}>
-      <div className="player-container" onClick={(event) => event.stopPropagation()}>
-        <div className="player-header">
-          <button className="player-close-btn" onClick={onClose}>
-            ✕
-          </button>
-          <div className="player-title">
-            {platformIcons[video.platform]} {video.title}
+    <div
+      className={`player-overlay${isCinemaMode ? ' player-overlay--cinema' : ''}`}
+      onClick={isCinemaMode ? exitCinemaMode : onClose}
+    >
+      <div
+        className={`player-container${isCinemaMode ? ' player-container--cinema' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Шапка скрывается в кино-режиме */}
+        {!isCinemaMode && (
+          <div className="player-header">
+            <button className="player-close-btn" onClick={onClose} aria-label="Закрыть">
+              ✕
+            </button>
+            <div className="player-title">
+              {platformIcons[video.platform]} {video.title}
+            </div>
+            <button
+              className="player-cinema-btn"
+              onClick={enterCinemaMode}
+              aria-label="На весь экран"
+              title="На весь экран"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M1 1h6v2H3v4H1V1zm12 0h6v6h-2V3h-4V1zM1 13h2v4h4v2H1v-6zm16 4h-4v2h6v-6h-2v4z"/>
+              </svg>
+            </button>
           </div>
-          <button
-            className="player-fullscreen-btn"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
-          >
-            {isFullscreen ? '⛶' : '⛶'}
-            <span className="player-fullscreen-icon">{isFullscreen ? '↙' : '↗'}</span>
-          </button>
-        </div>
+        )}
 
+        {/* Зона видео */}
         <div className="player-video-wrapper" ref={wrapperRef}>
           {loading && (
             <div className="player-loading">
@@ -133,31 +195,47 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
           ) : (
             <div className="player-error">Не удалось загрузить видео</div>
           )}
+
+          {/* Плавающая кнопка выхода из кино-режима */}
+          {isCinemaMode && (
+            <button
+              className="player-exit-cinema-btn"
+              onClick={exitCinemaMode}
+              aria-label="Выйти из режима просмотра"
+              title="Выйти"
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M7 1H1v6h2V3h4V1zm6 0h6v6h-2V3h-4V1zM1 13h2v4h4v2H1v-6zm12 4h4v-4h2v6h-6v-2z"/>
+              </svg>
+            </button>
+          )}
         </div>
 
-        <div className="player-actions">
-          <button
-            className="player-action-btn player-action-watched"
-            onClick={() => {
-              onMarkWatched?.(video.id, !isWatched);
-              onClose();
-            }}
-          >
-            {isWatched ? '✓ Просмотрено' : '👁 Отметить просмотренным'}
-          </button>
-
-          <button
-            className="player-action-btn player-action-delete"
-            onClick={() => {
-              if (window.confirm('Удалить видео из очереди?')) {
-                onDelete?.(video.id);
+        {/* Кнопки действий скрываются в кино-режиме */}
+        {!isCinemaMode && (
+          <div className="player-actions">
+            <button
+              className="player-action-btn player-action-watched"
+              onClick={() => {
+                onMarkWatched?.(video.id, !isWatched);
                 onClose();
-              }
-            }}
-          >
-            🗑 Удалить
-          </button>
-        </div>
+              }}
+            >
+              {isWatched ? '✓ Просмотрено' : '👁 Отметить просмотренным'}
+            </button>
+            <button
+              className="player-action-btn player-action-delete"
+              onClick={() => {
+                if (window.confirm('Удалить видео из очереди?')) {
+                  onDelete?.(video.id);
+                  onClose();
+                }
+              }}
+            >
+              🗑 Удалить
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
