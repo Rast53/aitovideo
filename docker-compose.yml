@@ -15,7 +15,7 @@ services:
         condition: on-failure
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.aitovideo.rule=Host(`${AITOVIDEO_DOMAIN}`)"
+        - "traefik.http.routers.aitovideo.rule=Host(`${AITOVIDEO_DOMAIN:-video.ragpt.ru}`)"
         - "traefik.http.routers.aitovideo.entrypoints=websecure"
         - "traefik.http.routers.aitovideo.tls=true"
         - "traefik.http.routers.aitovideo.tls.certresolver=letsencrypt"
@@ -30,7 +30,7 @@ services:
       - PORT=3000
       - BOT_TOKEN=${BOT_TOKEN}
       - DATABASE_URL=/app/data/videos.db
-      - MINI_APP_URL=https://${AITOVIDEO_DOMAIN}
+      - MINI_APP_URL=https://${AITOVIDEO_DOMAIN:-video.ragpt.ru}
     volumes:
       - backend-data:/app/data
     networks:
@@ -47,7 +47,7 @@ services:
       - NODE_ENV=production
       - BOT_TOKEN=${BOT_TOKEN}
       - API_URL=http://backend:3000
-      - MINI_APP_URL=https://${AITOVIDEO_DOMAIN}
+      - MINI_APP_URL=https://${AITOVIDEO_DOMAIN:-video.ragpt.ru}
     networks:
       - aitovideo-net
     deploy:
