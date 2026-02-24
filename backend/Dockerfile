@@ -1,24 +1,34 @@
+# ── Stage 1: Build ──────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Native build tools for better-sqlite3
+RUN apk add --no-cache python3 make g++
+
+COPY package*.json ./
+RUN npm install
+
+COPY tsconfig.json tsconfig.build.json ./
+COPY src ./src
+
+RUN npm run build
+
+# ── Stage 2: Production ─────────────────────────────────────────────────────
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies for better-sqlite3
+# Native runtime libs for better-sqlite3
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
 COPY package*.json ./
+RUN npm install --omit=dev
 
-# Install dependencies
-RUN npm ci --only=production
+COPY --from=builder /app/dist ./dist
 
-# Copy source code
-COPY src ./src
-
-# Create data directory
 RUN mkdir -p /app/data
 
-# Expose port
 EXPOSE 3000
 
-# Start command
-CMD ["node", "src/api/index.js"]
+CMD ["node", "dist/api/index.js"]

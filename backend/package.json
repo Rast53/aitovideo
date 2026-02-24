@@ -5,7 +5,9 @@
   "description": "Backend for AitoVideo - Telegram Mini App",
   "main": "src/api/index.ts",
   "scripts": {
-    "start": "tsx src/api/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/api/index.js",
+    "start:bot": "node dist/bot/index.js",
     "dev": "tsx watch src/api/index.ts",
     "bot": "tsx src/bot/index.ts"
   },
