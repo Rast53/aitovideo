@@ -1,0 +1,84 @@
+name: Project Auto-Move
+
+on:
+  pull_request:
+    types: [closed]
+  issues:
+    types: [closed]
+
+jobs:
+  move-to-done:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true || github.event.issue.closed_at != null
+    steps:
+      - name: Move linked issues to Done
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const projectId = 'PVT_kwHOBGC3EM4BQBTK';
+            const doneColumnId = 'done'; // Will be resolved dynamically
+            
+            // Get linked issues from PR body or commit message
+            const prBody = context.payload.pull_request?.body || '';
+            const issueNumbers = [...prBody.matchAll(/#(\d+)/g)].map(m => parseInt(m[1]));
+            
+            for (const issueNum of issueNumbers) {
+              console.log(`Processing issue #${issueNum}`);
+              
+              // Get issue node ID
+              const { repository } = await github.graphql(`
+                query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    issue(number: $number) {
+                      id
+                      projectItems(first: 10) {
+                        nodes {
+                          id
+                          project {
+                            id
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                number: issueNum
+              });
+              
+              if (!repository.issue) continue;
+              
+              // Find project item for this project
+              const projectItem = repository.issue.projectItems.nodes.find(
+                item => item.project.id === projectId
+              );
+              
+              if (projectItem) {
+                // Update status to Done
+                await github.graphql(`
+                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                    updateProjectV2ItemFieldValue(input: {
+                      projectId: $projectId
+                      itemId: $itemId
+                      fieldId: $fieldId
+                      value: { 
+                        singleSelectOptionId: $optionId
+                      }
+                    }) {
+                      projectV2Item {
+                        id
+                      }
+                    }
+                  }
+                `, {
+                  projectId: projectId,
+                  itemId: projectItem.id,
+                  fieldId: 'Status', // Will be resolved
+                  optionId: 'Done'
+                });
+                
+                console.log(`Moved issue #${issueNum} to Done`);
+              }
+            }
