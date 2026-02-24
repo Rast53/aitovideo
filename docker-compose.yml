@@ -1,26 +1,44 @@
 version: '3.8'
 
 services:
+  miniapp:
+    image: rast53/aitovideo-miniapp:latest
+    networks:
+      - traefik-net
+      - aitovideo-net
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.aitovideo.rule=Host(`${AITOVIDEO_DOMAIN}`)"
+        - "traefik.http.routers.aitovideo.entrypoints=websecure"
+        - "traefik.http.routers.aitovideo.tls=true"
+        - "traefik.http.routers.aitovideo.tls.certresolver=letsencrypt"
+        - "traefik.http.services.aitovideo.loadbalancer.server.port=80"
+        - "traefik.http.routers.aitovideo.service=aitovideo"
+        - "traefik.swarm.network=traefik-net"
+
   backend:
     image: rast53/aitovideo-backend:latest
-    ports:
-      - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
       - BOT_TOKEN=${BOT_TOKEN}
       - DATABASE_URL=/app/data/videos.db
-      - MINI_APP_URL=${MINI_APP_URL}
+      - MINI_APP_URL=https://${AITOVIDEO_DOMAIN}
     volumes:
       - backend-data:/app/data
     networks:
-      - tg-video-queue
+      - aitovideo-net
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
-        delay: 5s
-        max_attempts: 3
 
   bot:
     image: rast53/aitovideo-backend:latest
@@ -29,35 +47,20 @@ services:
       - NODE_ENV=production
       - BOT_TOKEN=${BOT_TOKEN}
       - API_URL=http://backend:3000
-      - MINI_APP_URL=${MINI_APP_URL}
+      - MINI_APP_URL=https://${AITOVIDEO_DOMAIN}
     networks:
-      - tg-video-queue
-    depends_on:
-      - backend
+      - aitovideo-net
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
-        delay: 5s
-        max_attempts: 3
-
-  miniapp:
-    image: rast53/aitovideo-miniapp:latest
-    ports:
-      - "3001:80"
-    networks:
-      - tg-video-queue
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
 
 volumes:
   backend-data:
     driver: local
 
 networks:
-  tg-video-queue:
+  traefik-net:
+    external: true
+  aitovideo-net:
     driver: overlay
