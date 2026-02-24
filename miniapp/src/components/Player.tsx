@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Video, VideoPlatform } from '../types/api';
 import './Player.css';
 
@@ -17,13 +17,56 @@ interface PlayerProps {
 
 export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps) {
   const [loading, setLoading] = useState<boolean>(true);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Expand to fullscreen on mobile
     if (window.Telegram?.WebApp) {
       window.Telegram.WebApp.expand();
     }
   }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        // Сначала пробуем Telegram WebApp requestFullscreen (Bot API 7.7+)
+        if (window.Telegram?.WebApp?.requestFullscreen) {
+          window.Telegram.WebApp.requestFullscreen();
+          return;
+        }
+        // Запрашиваем fullscreen на обёртке или iframe
+        const element = wrapperRef.current ?? iframeRef.current;
+        if (element) {
+          if (element.requestFullscreen) {
+            await element.requestFullscreen();
+          } else if ((element as HTMLElement & { webkitRequestFullscreen?: () => void }).webkitRequestFullscreen) {
+            (element as HTMLElement & { webkitRequestFullscreen: () => void }).webkitRequestFullscreen();
+          }
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen) {
+          (document as Document & { webkitExitFullscreen: () => void }).webkitExitFullscreen();
+        }
+      }
+    } catch {
+      // Fullscreen API недоступен в данном окружении
+    }
+  };
 
   if (!video) {
     return null;
@@ -61,9 +104,17 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
           <div className="player-title">
             {platformIcons[video.platform]} {video.title}
           </div>
+          <button
+            className="player-fullscreen-btn"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
+          >
+            {isFullscreen ? '⛶' : '⛶'}
+            <span className="player-fullscreen-icon">{isFullscreen ? '↙' : '↗'}</span>
+          </button>
         </div>
 
-        <div className="player-video-wrapper">
+        <div className="player-video-wrapper" ref={wrapperRef}>
           {loading && (
             <div className="player-loading">
               <div className="spinner" />
@@ -71,10 +122,11 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
           )}
           {embedUrl ? (
             <iframe
+              ref={iframeRef}
               src={embedUrl}
               title={video.title}
               frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
               allowFullScreen
               onLoad={() => setLoading(false)}
             />

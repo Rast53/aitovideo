@@ -25,6 +25,30 @@
   background: var(--tg-theme-secondary-bg-color);
 }
 
+.player-fullscreen-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border-radius: 50%;
+  font-size: 18px;
+  color: var(--tg-theme-text-color);
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.player-fullscreen-btn:active {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.player-fullscreen-icon {
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+}
+
 .player-close-btn {
   width: 36px;
   height: 36px;
