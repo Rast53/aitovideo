@@ -105,7 +105,7 @@ async function tryVkApi(ownerId: string, videoId: string): Promise<VkVideoInfo |
   }
 }
 
-// ─── Method 2: VK oEmbed (works only if VPS IP is not blocked by VK) ─────────
+// ─── Method 2: VK oEmbed ─────────────────────────────────────────────────────
 
 async function tryOembed(ownerId: string, videoId: string): Promise<VkVideoInfo | null> {
   const videoUrl = `https://vk.com/video${ownerId}_${videoId}`;
@@ -117,6 +117,7 @@ async function tryOembed(ownerId: string, videoId: string): Promise<VkVideoInfo 
       signal: AbortSignal.timeout(8000)
     });
 
+    console.log(`[VK oEmbed] status=${res.status}`);
     if (!res.ok) return null;
 
     const data = (await res.json()) as VkOembedResponse;
@@ -130,12 +131,58 @@ async function tryOembed(ownerId: string, videoId: string): Promise<VkVideoInfo 
       duration: null,
       embedUrl: `https://vk.com/video_ext.php?oid=${ownerId}&id=${videoId}&hd=2`
     };
-  } catch {
+  } catch (err) {
+    console.warn('[VK oEmbed] error:', err);
     return null;
   }
 }
 
-// ─── Method 3: HTML Open Graph scraping (last resort) ────────────────────────
+// ─── Method 3: HTML scraping — mobile UA (sometimes bypasses bot detection) ──
+
+async function tryMobileScraping(ownerId: string, videoId: string): Promise<VkVideoInfo | null> {
+  const videoUrl = `https://m.vk.com/video${ownerId}_${videoId}`;
+
+  try {
+    const res = await fetch(videoUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'ru-RU,ru;q=0.9'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    console.log(`[VK mobile] status=${res.status} url=${videoUrl}`);
+    if (!res.ok) return null;
+
+    const html = await res.text();
+
+    const titleMatch =
+      html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/) ??
+      html.match(/<meta\s+content="([^"]+)"\s+property="og:title"/) ??
+      html.match(/<title>([^<]+)<\/title>/);
+    const imageMatch =
+      html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/) ??
+      html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/);
+
+    const title = titleMatch?.[1]?.trim();
+    if (!title || title === 'VK' || title.toLowerCase().includes('vkontakte')) return null;
+
+    return {
+      title: decodeHtmlEntities(title),
+      channelName: 'VK Video',
+      thumbnailUrl: imageMatch?.[1] ?? null,
+      duration: null,
+      embedUrl: `https://vk.com/video_ext.php?oid=${ownerId}&id=${videoId}&hd=2`
+    };
+  } catch (err) {
+    console.warn('[VK mobile] error:', err);
+    return null;
+  }
+}
+
+// ─── Method 4: HTML scraping — desktop (last resort) ─────────────────────────
 
 async function tryHtmlScraping(ownerId: string, videoId: string): Promise<VkVideoInfo | null> {
   const videoUrl = `https://vk.com/video${ownerId}_${videoId}`;
@@ -146,6 +193,7 @@ async function tryHtmlScraping(ownerId: string, videoId: string): Promise<VkVide
       signal: AbortSignal.timeout(10000)
     });
 
+    console.log(`[VK desktop] status=${res.status}`);
     if (!res.ok) return null;
 
     const html = await res.text();
@@ -167,7 +215,8 @@ async function tryHtmlScraping(ownerId: string, videoId: string): Promise<VkVide
       duration: null,
       embedUrl: `https://vk.com/video_ext.php?oid=${ownerId}&id=${videoId}&hd=2`
     };
-  } catch {
+  } catch (err) {
+    console.warn('[VK desktop] error:', err);
     return null;
   }
 }
@@ -175,28 +224,41 @@ async function tryHtmlScraping(ownerId: string, videoId: string): Promise<VkVide
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function getVkVideoInfo(ownerId: string, videoId: string): Promise<VkVideoInfo> {
-  // 1. Official VK API (best: title + duration + thumbnails)
+  console.log(`[VK] Fetching metadata for ${ownerId}_${videoId} ...`);
+
+  // 1. Official VK API — точные данные, работает с любого IP
   const apiResult = await tryVkApi(ownerId, videoId);
   if (apiResult) {
-    console.log(`[VK] API success: "${apiResult.title}"`);
+    console.log(`[VK] ✓ API: "${apiResult.title}"`);
     return apiResult;
   }
 
-  // 2. oEmbed (works when VPS IP is not blocked)
+  // 2. oEmbed
   const oembedResult = await tryOembed(ownerId, videoId);
   if (oembedResult) {
-    console.log(`[VK] oEmbed success: "${oembedResult.title}"`);
+    console.log(`[VK] ✓ oEmbed: "${oembedResult.title}"`);
     return oembedResult;
   }
 
-  // 3. HTML scraping (last resort)
+  // 3. Mobile HTML scraping
+  const mobileResult = await tryMobileScraping(ownerId, videoId);
+  if (mobileResult) {
+    console.log(`[VK] ✓ Mobile scraping: "${mobileResult.title}"`);
+    return mobileResult;
+  }
+
+  // 4. Desktop HTML scraping
   const htmlResult = await tryHtmlScraping(ownerId, videoId);
   if (htmlResult) {
-    console.log(`[VK] HTML scraping success: "${htmlResult.title}"`);
+    console.log(`[VK] ✓ Desktop scraping: "${htmlResult.title}"`);
     return htmlResult;
   }
 
-  console.warn(`[VK] All methods failed for ${ownerId}_${videoId}. Set VK_SERVICE_TOKEN env var.`);
+  console.warn(
+    `[VK] ✗ All methods failed for ${ownerId}_${videoId}.\n` +
+    `  → Создайте VK-приложение на vk.com/editapp?act=create\n` +
+    `  → Добавьте Сервисный ключ как VK_SERVICE_TOKEN в env`
+  );
   return {
     title: 'VK Video',
     channelName: 'VK Video',
