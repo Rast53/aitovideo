@@ -86,6 +86,7 @@ router.get('/thumbnail', async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
+    console.log(`[proxy/thumbnail] fetching: ${targetUrl}`);
     const upstream = await fetch(targetUrl, {
       headers: {
         'User-Agent':
@@ -97,13 +98,17 @@ router.get('/thumbnail', async (req: Request, res: Response): Promise<void> => {
       signal: AbortSignal.timeout(10000)
     });
 
+    console.log(`[proxy/thumbnail] upstream status=${upstream.status} content-type=${upstream.headers.get('content-type') ?? 'n/a'}`);
+
     if (!upstream.ok) {
+      console.warn(`[proxy/thumbnail] upstream error ${upstream.status} for ${targetUrl}`);
       res.status(upstream.status).json({ error: `Upstream returned ${upstream.status}` });
       return;
     }
 
     const contentType = upstream.headers.get('content-type') ?? 'image/jpeg';
     if (!contentType.startsWith('image/')) {
+      console.warn(`[proxy/thumbnail] unexpected content-type="${contentType}" for ${targetUrl}`);
       res.status(415).json({ error: 'Upstream did not return an image' });
       return;
     }

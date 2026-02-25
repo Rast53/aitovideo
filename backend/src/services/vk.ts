@@ -167,6 +167,7 @@ async function tryMobileScraping(ownerId: string, videoId: string): Promise<VkVi
       html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/);
 
     const title = titleMatch?.[1]?.trim();
+    console.log(`[VK mobile] raw title="${title ?? 'NOT FOUND'}"`);
     const isGeneric =
       !title ||
       title === 'VK' ||
@@ -175,7 +176,10 @@ async function tryMobileScraping(ownerId: string, videoId: string): Promise<VkVi
       title.includes('Вконтакте') ||
       title.startsWith('VK |') ||
       title.startsWith('ВК |');
-    if (isGeneric) return null;
+    if (isGeneric) {
+      console.log('[VK mobile] title is generic, skipping');
+      return null;
+    }
 
     return {
       title: decodeHtmlEntities(title),
@@ -246,10 +250,13 @@ async function tryGooglebotScraping(ownerId: string, videoId: string): Promise<V
       html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/) ??
       html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/);
 
+    const thumbnailUrl = imageMatch?.[1] ?? null;
+    console.log(`[VK googlebot] thumbnailUrl=${thumbnailUrl ?? 'NOT FOUND'}`);
+
     return {
       title,
       channelName: 'VK Video',
-      thumbnailUrl: imageMatch?.[1] ?? null,
+      thumbnailUrl,
       duration: null,
       embedUrl: `https://vk.com/video_ext.php?oid=${ownerId}&id=${videoId}&hd=2`
     };
