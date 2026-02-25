@@ -171,13 +171,21 @@ ${platformEmoji[video.platform] ?? '📹'} *${video.title}*
         }
       : {};
 
-    // Send thumbnail if available
+    // Send thumbnail if available; fall back to text if Telegram can't fetch the URL
     if (video.thumbnail_url) {
-      void bot.sendPhoto(chatId, video.thumbnail_url, {
-        caption: message,
-        parse_mode: 'Markdown',
-        ...keyboard
-      });
+      try {
+        await bot.sendPhoto(chatId, video.thumbnail_url, {
+          caption: message,
+          parse_mode: 'Markdown',
+          ...keyboard
+        });
+      } catch {
+        // Telegram couldn't fetch the photo (e.g. VK CDN blocks external requests)
+        void bot.sendMessage(chatId, message, {
+          parse_mode: 'Markdown',
+          ...keyboard
+        });
+      }
     } else {
       void bot.sendMessage(chatId, message, {
         parse_mode: 'Markdown',

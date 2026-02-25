@@ -156,7 +156,7 @@ async function tryMobileScraping(ownerId: string, videoId: string): Promise<VkVi
     console.log(`[VK mobile] status=${res.status} url=${videoUrl}`);
     if (!res.ok) return null;
 
-    const html = await res.text();
+    const html = await readHtml(res);
 
     const titleMatch =
       html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/) ??
@@ -190,6 +190,36 @@ async function tryMobileScraping(ownerId: string, videoId: string): Promise<VkVi
   }
 }
 
+// ─── Encoding helpers ─────────────────────────────────────────────────────────
+
+/** Read response as text, auto-detecting windows-1251 vs UTF-8 from Content-Type / meta charset */
+async function readHtml(res: Response): Promise<string> {
+  const contentType = res.headers.get('content-type') ?? '';
+  // Detect charset from Content-Type header
+  const ctCharset = contentType.match(/charset=([^\s;]+)/i)?.[1]?.toLowerCase();
+
+  if (ctCharset && ctCharset !== 'utf-8' && ctCharset !== 'utf8') {
+    // Non-UTF-8 — decode via ArrayBuffer
+    const buf = await res.arrayBuffer();
+    return new TextDecoder(ctCharset).decode(buf);
+  }
+
+  // Read as text first, then check meta charset fallback
+  const text = await res.text();
+  const metaCharset =
+    text.match(/<meta[^>]+charset=["']?([^\s"';>]+)/i)?.[1]?.toLowerCase() ??
+    text.match(/charset=([^\s"';>]+)/i)?.[1]?.toLowerCase();
+
+  if (metaCharset && metaCharset !== 'utf-8' && metaCharset !== 'utf8') {
+    // Re-decode: text() already decoded as UTF-8, we need raw bytes
+    // Encode back to binary using latin1 (1:1 byte mapping) then decode with correct charset
+    const bytes = Uint8Array.from(text, (c) => c.charCodeAt(0));
+    return new TextDecoder(metaCharset).decode(bytes);
+  }
+
+  return text;
+}
+
 // ─── Method 4: HTML scraping — Googlebot UA (VK often serves full page to bots)
 
 async function tryGooglebotScraping(ownerId: string, videoId: string): Promise<VkVideoInfo | null> {
@@ -208,7 +238,7 @@ async function tryGooglebotScraping(ownerId: string, videoId: string): Promise<V
     console.log(`[VK googlebot] status=${res.status}`);
     if (!res.ok) return null;
 
-    const html = await res.text();
+    const html = await readHtml(res);
     const title = extractOgTitle(html);
     if (!title) return null;
 
@@ -262,7 +292,7 @@ async function tryHtmlScraping(ownerId: string, videoId: string): Promise<VkVide
     console.log(`[VK desktop] status=${res.status}`);
     if (!res.ok) return null;
 
-    const html = await res.text();
+    const html = await readHtml(res);
     const title = extractOgTitle(html);
     if (!title) return null;
 
