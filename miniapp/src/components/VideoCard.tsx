@@ -2,6 +2,20 @@ import type { MouseEvent } from 'react';
 import type { Video, VideoPlatform } from '../types/api';
 import './VideoCard.css';
 
+const API_URL: string = import.meta.env.VITE_API_URL ?? '';
+
+/**
+ * For VK videos the CDN blocks direct browser requests.
+ * Route the thumbnail through our backend proxy instead.
+ */
+function getThumbnailSrc(video: Video): string | null {
+  if (!video.thumbnail_url) return null;
+  if (video.platform === 'vk') {
+    return `${API_URL}/api/proxy/thumbnail?url=${encodeURIComponent(video.thumbnail_url)}`;
+  }
+  return video.thumbnail_url;
+}
+
 const platformIcons: Record<VideoPlatform, string> = {
   youtube: '📺',
   rutube: '▶️',
@@ -32,16 +46,17 @@ export function VideoCard({ video, onClick, onDelete }: VideoCardProps) {
     }
   };
 
+  const thumbnailSrc = getThumbnailSrc(video);
+
   return (
     <div className="video-card" onClick={() => onClick?.(video)}>
       <div className="video-thumbnail">
-        {video.thumbnail_url ? (
+        {thumbnailSrc ? (
           <img
-            src={video.thumbnail_url}
+            src={thumbnailSrc}
             alt={video.title}
             loading="lazy"
             onError={(e) => {
-              // If CDN blocks the image (e.g. VK), fall back to platform icon placeholder
               const target = e.currentTarget;
               target.style.display = 'none';
               const placeholder = target.nextElementSibling as HTMLElement | null;
@@ -51,7 +66,7 @@ export function VideoCard({ video, onClick, onDelete }: VideoCardProps) {
         ) : null}
         <div
           className="video-thumbnail-placeholder"
-          style={{ display: video.thumbnail_url ? 'none' : 'flex' }}
+          style={{ display: thumbnailSrc ? 'none' : 'flex' }}
         >
           {platformIcons[video.platform] ?? '📹'}
         </div>

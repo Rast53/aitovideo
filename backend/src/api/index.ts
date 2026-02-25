@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { optionalTelegramAuth, telegramAuthMiddleware } from './middleware/auth.js';
 import progressRouter from './routes/progress.js';
+import proxyRouter from './routes/proxy.js';
 import userRouter from './routes/user.js';
 import videosRouter from './routes/videos.js';
 
@@ -20,7 +21,8 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Public routes (for bot webhook)
+// Public routes (no auth required)
+app.use('/api/proxy', proxyRouter);
 app.use('/api/videos', optionalTelegramAuth, videosRouter);
 
 // Protected routes (require Telegram auth)
