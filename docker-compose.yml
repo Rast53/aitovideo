@@ -31,6 +31,7 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - DATABASE_URL=/app/data/videos.db
       - MINI_APP_URL=https://${AITOVIDEO_DOMAIN:-video.ragpt.ru}
+      - VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-}
     volumes:
       - backend-data:/app/data
     networks:
@@ -48,6 +49,7 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - API_URL=http://backend:3000
       - MINI_APP_URL=https://${AITOVIDEO_DOMAIN:-video.ragpt.ru}
+      - VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-}
     networks:
       - aitovideo-net
     deploy:
