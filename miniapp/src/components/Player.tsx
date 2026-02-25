@@ -38,11 +38,23 @@ function formatTime(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+// Piped.video instances — open-source YouTube proxy, streams go through Piped's
+// servers so the client never connects to youtube.com directly.
+// This bypasses both bot-detection and regional blocks.
+const PIPED_INSTANCES = [
+  'https://piped.video',
+  'https://piped.adminforge.de',
+  'https://piped.privacydev.net'
+];
+
 function getEmbedUrl(platform: VideoPlatform, externalId: string, startSeconds: number): string | null {
   const t = Math.floor(startSeconds);
   switch (platform) {
-    case 'youtube':
-      return `https://www.youtube-nocookie.com/embed/${externalId}?autoplay=1${t > 0 ? `&start=${t}` : ''}`;
+    case 'youtube': {
+      // Use first Piped instance; if it fails the user can open externally
+      const piped = PIPED_INSTANCES[0];
+      return `${piped}/embed/${externalId}?autoplay=1${t > 0 ? `&start=${t}` : ''}`;
+    }
     case 'rutube':
       return `https://rutube.ru/play/embed/${externalId}${t > 0 ? `?t=${t}` : ''}`;
     case 'vk': {
@@ -52,6 +64,30 @@ function getEmbedUrl(platform: VideoPlatform, externalId: string, startSeconds: 
     }
     default:
       return null;
+  }
+}
+
+function getExternalUrl(platform: VideoPlatform, externalId: string): string | null {
+  switch (platform) {
+    case 'youtube':
+      return `https://www.youtube.com/watch?v=${externalId}`;
+    case 'rutube':
+      return `https://rutube.ru/video/${externalId}/`;
+    case 'vk': {
+      const [oid, vid] = externalId.split('_');
+      if (!oid || !vid) return null;
+      return `https://vkvideo.ru/video${oid}_${vid}`;
+    }
+    default:
+      return null;
+  }
+}
+
+function openExternal(url: string): void {
+  if (window.Telegram?.WebApp?.openLink) {
+    window.Telegram.WebApp.openLink(url);
+  } else {
+    window.open(url, '_blank');
   }
 }
 
@@ -211,6 +247,23 @@ export function Player({ video, onClose }: PlayerProps) {
         <div className="player-title-overlay">
           {platformIcons[video.platform]} {video.title}
         </div>
+
+        {/* ── Open externally (bottom bar, YouTube hint) ────────────────── */}
+        {(() => {
+          const extUrl = getExternalUrl(video.platform, video.external_id);
+          if (!extUrl) return null;
+          return (
+            <button
+              className="player-open-external-btn"
+              onClick={(e) => { e.stopPropagation(); openExternal(extUrl); }}
+              aria-label="Открыть в браузере"
+            >
+              {video.platform === 'youtube'
+                ? '📺 YouTube заблокирован? → Открыть в браузере (VPN)'
+                : '🔗 Открыть в браузере'}
+            </button>
+          );
+        })()}
 
         {/* ── Resume modal ─────────────────────────────────────────────── */}
         {showResumeModal && savedProgress && (
