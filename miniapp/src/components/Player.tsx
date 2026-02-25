@@ -34,6 +34,7 @@ type ExtendedScreenOrientation = ScreenOrientation & {
 
 interface YTPlayerOptions {
   videoId: string;
+  host?: string;
   playerVars?: { autoplay?: number; start?: number };
   events?: {
     onReady?: () => void;
@@ -192,6 +193,7 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
       if (destroyed || !ytContainerRef.current) return;
 
       ytPlayerRef.current = new window.YT!.Player(ytContainerRef.current, {
+        host: 'https://www.youtube-nocookie.com',
         videoId: video.external_id,
         playerVars: { autoplay: 1, start: Math.floor(from) },
         events: {
