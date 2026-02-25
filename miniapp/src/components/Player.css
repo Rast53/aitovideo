@@ -102,18 +102,6 @@
   display: block;
 }
 
-/* YouTube IFrame API injects <iframe> inside this div */
-.yt-player-host {
-  width: 100%;
-  height: 100%;
-}
-
-.yt-player-host iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-}
 
 .player-loading {
   position: absolute;

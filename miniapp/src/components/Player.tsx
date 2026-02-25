@@ -30,52 +30,6 @@ type ExtendedScreenOrientation = ScreenOrientation & {
   unlock?: () => void;
 };
 
-// ─── YouTube IFrame API ────────────────────────────────────────────────────────
-
-interface YTPlayerOptions {
-  videoId: string;
-  host?: string;
-  playerVars?: { autoplay?: number; start?: number };
-  events?: {
-    onReady?: () => void;
-    onError?: () => void;
-  };
-}
-
-interface YTPlayer {
-  getCurrentTime(): number;
-  destroy(): void;
-}
-
-declare global {
-  interface Window {
-    YT?: { Player: new (el: HTMLElement, opts: YTPlayerOptions) => YTPlayer };
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-// Singleton loader — handles multiple Player mounts correctly
-let ytApiLoaded = false;
-const ytReadyQueue: Array<() => void> = [];
-
-function whenYtReady(cb: () => void): void {
-  if (ytApiLoaded && window.YT?.Player) {
-    cb();
-    return;
-  }
-  ytReadyQueue.push(cb);
-  if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
-    window.onYouTubeIframeAPIReady = () => {
-      ytApiLoaded = true;
-      for (const fn of ytReadyQueue) fn();
-      ytReadyQueue.length = 0;
-    };
-    const tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(tag);
-  }
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(totalSeconds: number): string {
@@ -86,17 +40,22 @@ function formatTime(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function getNonYtEmbedUrl(platform: VideoPlatform, externalId: string, startSeconds: number): string | null {
+function getEmbedUrl(platform: VideoPlatform, externalId: string, startSeconds: number): string | null {
   const t = Math.floor(startSeconds);
-  if (platform === 'rutube') {
-    return `https://rutube.ru/play/embed/${externalId}${t > 0 ? `?t=${t}` : ''}`;
+  switch (platform) {
+    case 'youtube':
+      // youtube-nocookie.com — работает без авторизации в любом WebView
+      return `https://www.youtube-nocookie.com/embed/${externalId}?autoplay=1${t > 0 ? `&start=${t}` : ''}`;
+    case 'rutube':
+      return `https://rutube.ru/play/embed/${externalId}${t > 0 ? `?t=${t}` : ''}`;
+    case 'vk': {
+      const [oid, vid] = externalId.split('_');
+      if (!oid || !vid) return null;
+      return `https://vk.com/video_ext.php?oid=${oid}&id=${vid}&hd=2&autoplay=1`;
+    }
+    default:
+      return null;
   }
-  if (platform === 'vk') {
-    const [oid, vid] = externalId.split('_');
-    if (!oid || !vid) return null;
-    return `https://vk.com/video_ext.php?oid=${oid}&id=${vid}&hd=2&autoplay=1`;
-  }
-  return null;
 }
 
 const MIN_RESUME_SECONDS = 10;
@@ -112,51 +71,35 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
   const [savedProgress, setSavedProgress] = useState<VideoProgress | null>(null);
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [startFrom, setStartFrom] = useState(0);
-  // True once the user has decided (resume or from start) and playback should begin
   const [playbackReady, setPlaybackReady] = useState(false);
 
-  // DOM refs
   const wrapperRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const ytContainerRef = useRef<HTMLDivElement>(null);
 
-  // Playback tracking refs (mutable, no re-render needed)
-  const ytPlayerRef = useRef<YTPlayer | null>(null);
-  const elapsedRef = useRef(0);          // for Rutube/VK: seconds since playback started
+  // Elapsed timer refs — all platforms use the same simple timer approach.
+  // For YouTube the timer is an approximation (cross-origin iframe, no JS API in WebView).
+  // For Rutube/VK same limitation applies.
+  // The key benefit: timer starts from `startFrom`, so "continue from X" is accurate
+  // across sessions even if intra-session seeks are not tracked.
+  const elapsedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Keep stable references to video.id and platform without extra deps
   const videoIdRef = useRef(video.id);
-  const platformRef = useRef(video.platform);
   useEffect(() => { videoIdRef.current = video.id; }, [video.id]);
-  useEffect(() => { platformRef.current = video.platform; }, [video.platform]);
-
-  // ── Helpers for reading current position ──────────────────────────────────
-  // YouTube: getCurrentTime() reflects actual seek position — accurate even after scrubbing
-  // Rutube/VK: elapsed timer is an approximation (cross-origin iframe has no API)
-  function readPosition(): number {
-    if (platformRef.current === 'youtube' && ytPlayerRef.current) {
-      try { return Math.floor(ytPlayerRef.current.getCurrentTime()); }
-      catch { /* player not ready yet */ }
-    }
-    return elapsedRef.current;
-  }
 
   function clearTimers() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (saveTimerRef.current) { clearInterval(saveTimerRef.current); saveTimerRef.current = null; }
   }
 
-  // ── Unmount: flush position and clean up ──────────────────────────────────
+  // ── Unmount: flush final position ────────────────────────────────────────
   useEffect(() => {
     return () => {
       clearTimers();
-      const pos = readPosition();
+      const pos = elapsedRef.current;
       if (pos >= MIN_RESUME_SECONDS) {
         api.saveProgress(videoIdRef.current, pos).catch(() => {});
       }
-      ytPlayerRef.current?.destroy();
-      ytPlayerRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -172,7 +115,6 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
           setSavedProgress(p);
           setShowResumeModal(true);
         } else {
-          // No meaningful progress — start immediately
           setPlaybackReady(true);
         }
       })
@@ -182,57 +124,15 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
     return () => { cancelled = true; };
   }, [video.id]);
 
-  // ── YouTube: initialize IFrame Player once playback is ready ─────────────
+  // ── Start elapsed timer once playback begins ──────────────────────────────
   useEffect(() => {
-    if (!playbackReady || video.platform !== 'youtube') return;
+    if (!playbackReady) return;
 
-    const from = startFrom;
-    let destroyed = false;
-
-    const createPlayer = () => {
-      if (destroyed || !ytContainerRef.current) return;
-
-      ytPlayerRef.current = new window.YT!.Player(ytContainerRef.current, {
-        host: 'https://www.youtube-nocookie.com',
-        videoId: video.external_id,
-        playerVars: { autoplay: 1, start: Math.floor(from) },
-        events: {
-          onReady: () => {
-            if (destroyed) return;
-            setLoading(false);
-            // Periodic save using actual getCurrentTime — reflects seeks
-            if (saveTimerRef.current) clearInterval(saveTimerRef.current);
-            saveTimerRef.current = setInterval(() => {
-              if (!ytPlayerRef.current) return;
-              try {
-                const pos = Math.floor(ytPlayerRef.current.getCurrentTime());
-                if (pos >= MIN_RESUME_SECONDS) {
-                  api.saveProgress(videoIdRef.current, pos).catch(() => {});
-                }
-              } catch { /* player not ready */ }
-            }, SAVE_INTERVAL_MS);
-          },
-          onError: () => setLoading(false),
-        },
-      });
-    };
-
-    whenYtReady(createPlayer);
-
-    return () => { destroyed = true; };
-  }, [playbackReady, video.platform, video.external_id, startFrom]);
-
-  // ── Rutube / VK: elapsed timer (approximate — cross-origin iframe) ────────
-  useEffect(() => {
-    if (!playbackReady || video.platform === 'youtube') return;
-
-    // Start elapsed counting from the resume position, not from zero
+    // Start elapsed from the resume position so saved value = resume_pos + time_watched
     elapsedRef.current = startFrom;
 
-    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => { elapsedRef.current += 1; }, 1000);
 
-    if (saveTimerRef.current) clearInterval(saveTimerRef.current);
     saveTimerRef.current = setInterval(() => {
       const pos = elapsedRef.current;
       if (pos >= MIN_RESUME_SECONDS) {
@@ -241,7 +141,7 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
     }, SAVE_INTERVAL_MS);
 
     return clearTimers;
-  }, [playbackReady, video.platform, startFrom]);
+  }, [playbackReady, startFrom]);
 
   // ── Telegram expand ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -253,9 +153,7 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
     const handleFsChange = () => {
       const doc = document as ExtendedDocument;
       const active = !!(document.fullscreenElement || doc.webkitFullscreenElement);
-      if (!active && isCinemaMode) {
-        // native FS ended but we keep cinema mode (hidden panels)
-      }
+      if (!active && isCinemaMode) { /* native FS ended, keep cinema mode */ }
     };
     document.addEventListener('fullscreenchange', handleFsChange);
     document.addEventListener('webkitfullscreenchange', handleFsChange);
@@ -268,14 +166,14 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
   // ── Cinema mode ───────────────────────────────────────────────────────────
   const enterCinemaMode = async () => {
     if (window.Telegram?.WebApp?.requestFullscreen) {
-      try { window.Telegram.WebApp.requestFullscreen(); } catch { /* не поддерживается */ }
+      try { window.Telegram.WebApp.requestFullscreen(); } catch { /* */ }
     }
     const el = wrapperRef.current as ExtendedHTMLElement | null;
     if (el && !document.fullscreenElement) {
       try {
         if (el.requestFullscreen) await el.requestFullscreen();
         else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-      } catch { /* WebView */ }
+      } catch { /* */ }
     }
     try {
       const o = screen.orientation as ExtendedScreenOrientation;
@@ -320,9 +218,7 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
 
   const isWatched = Boolean(video.is_watched);
   const isProgressLoading = !showResumeModal && !playbackReady;
-  const nonYtUrl = video.platform !== 'youtube' && playbackReady
-    ? getNonYtEmbedUrl(video.platform, video.external_id, startFrom)
-    : null;
+  const embedUrl = playbackReady ? getEmbedUrl(video.platform, video.external_id, startFrom) : null;
 
   return (
     <div
@@ -378,24 +274,18 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
             <div className="player-loading"><div className="spinner" /></div>
           )}
 
-          {/* YouTube: div container — YT API injects <iframe> inside it */}
-          {video.platform === 'youtube' && playbackReady && (
-            <div ref={ytContainerRef} className="yt-player-host" />
-          )}
-
-          {/* Rutube / VK: standard cross-origin iframe */}
-          {video.platform !== 'youtube' && playbackReady && (
-            nonYtUrl ? (
-              <iframe
-                ref={iframeRef}
-                src={nonYtUrl}
-                title={video.title}
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                allowFullScreen
-                onLoad={() => setLoading(false)}
-              />
-            ) : (
+          {embedUrl ? (
+            <iframe
+              ref={iframeRef}
+              src={embedUrl}
+              title={video.title}
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+              allowFullScreen
+              onLoad={() => setLoading(false)}
+            />
+          ) : (
+            !isProgressLoading && !showResumeModal && (
               <div className="player-error">Не удалось загрузить видео</div>
             )
           )}
