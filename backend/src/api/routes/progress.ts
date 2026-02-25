@@ -83,6 +83,18 @@ router.post(
         return;
       }
 
+      // Verify the video exists and belongs to this user before touching progress.
+      // Prevents FOREIGN KEY constraint errors if video was deleted while playing.
+      const videoExists = db
+        .prepare('SELECT id FROM videos WHERE id = ? AND user_id = ?')
+        .get(video_id, user.id);
+
+      if (!videoExists) {
+        // Video gone (deleted) — silently ignore, no progress to save
+        res.json({ progress: { id: 0, user_id: user.id, video_id, position_seconds: Math.floor(position_seconds), updated_at: new Date().toISOString() } as VideoProgress });
+        return;
+      }
+
       db.prepare(`
         INSERT INTO video_progress (user_id, video_id, position_seconds, updated_at)
         VALUES (?, ?, ?, CURRENT_TIMESTAMP)

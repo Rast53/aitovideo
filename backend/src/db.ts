@@ -12,6 +12,8 @@ const db = new Database(DB_PATH);
 
 // Enable WAL mode for better performance
 db.pragma('journal_mode = WAL');
+// Enable foreign key enforcement (SQLite disables it by default per connection)
+db.pragma('foreign_keys = ON');
 
 // Initialize tables
 function initTables(): void {
