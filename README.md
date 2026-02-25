@@ -58,6 +58,7 @@ aitovideo/
 | `AITOVIDEO_DOMAIN` | stack env | Домен Mini App (без https://) |
 | `DATABASE_URL` | backend | Путь к SQLite (по умолчанию `/app/data/videos.db`) |
 | `VK_SERVICE_TOKEN` | backend, bot | Опционально: сервисный ключ VK Standalone-приложения для `video.get` API |
+| `YTDLP_PROXY` | backend | Опционально: прокси для yt-dlp, если YouTube заблокирован на VPS (напр. `socks5://user:pass@host:1080`) |
 
 ## Деплой
 

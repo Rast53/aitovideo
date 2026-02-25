@@ -29,14 +29,19 @@ async function getStreamUrl(videoId: string): Promise<string> {
     return cached.url;
   }
 
+  // Support outbound proxy for VPS in regions where YouTube is blocked.
+  // Set YTDLP_PROXY=socks5://host:port or http://host:port in environment.
+  const proxyArg = process.env.YTDLP_PROXY ? `--proxy "${process.env.YTDLP_PROXY}"` : '';
+
   // yt-dlp format selector: try 720p → 360p → best combined ≤720p
   const cmd = [
     'yt-dlp',
     '-f', '"22/18/best[height<=720][vcodec!=none][acodec!=none][ext=mp4]"',
     '--no-playlist',
+    proxyArg,
     '--get-url',
     `"https://www.youtube.com/watch?v=${videoId}"`
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 
   const { stdout, stderr } = await execAsync(cmd, { timeout: 30_000 });
 

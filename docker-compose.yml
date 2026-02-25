@@ -32,6 +32,7 @@ services:
       - DATABASE_URL=/app/data/videos.db
       - MINI_APP_URL=https://${AITOVIDEO_DOMAIN}
       - VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-}
+      - YTDLP_PROXY=${YTDLP_PROXY:-}
     volumes:
       - backend-data:/app/data
     networks:
