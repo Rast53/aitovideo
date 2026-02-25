@@ -36,10 +36,25 @@ export function VideoCard({ video, onClick, onDelete }: VideoCardProps) {
     <div className="video-card" onClick={() => onClick?.(video)}>
       <div className="video-thumbnail">
         {video.thumbnail_url ? (
-          <img src={video.thumbnail_url} alt={video.title} loading="lazy" />
-        ) : (
-          <div className="video-thumbnail-placeholder">{platformIcons[video.platform] ?? '📹'}</div>
-        )}
+          <img
+            src={video.thumbnail_url}
+            alt={video.title}
+            loading="lazy"
+            onError={(e) => {
+              // If CDN blocks the image (e.g. VK), fall back to platform icon placeholder
+              const target = e.currentTarget;
+              target.style.display = 'none';
+              const placeholder = target.nextElementSibling as HTMLElement | null;
+              if (placeholder) placeholder.style.display = 'flex';
+            }}
+          />
+        ) : null}
+        <div
+          className="video-thumbnail-placeholder"
+          style={{ display: video.thumbnail_url ? 'none' : 'flex' }}
+        >
+          {platformIcons[video.platform] ?? '📹'}
+        </div>
         {video.duration !== null && video.duration > 0 && (
           <span className="video-duration">{formatDuration(video.duration)}</span>
         )}
