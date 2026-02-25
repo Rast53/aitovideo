@@ -6,6 +6,7 @@ interface VideoListProps {
   videos: Video[];
   onVideoClick?: (video: Video) => void;
   onDelete?: (id: number) => void;
+  onMarkWatched?: (id: number, isWatched: boolean) => void;
   loading: boolean;
 }
 
@@ -13,6 +14,7 @@ export function VideoList({
   videos,
   onVideoClick,
   onDelete,
+  onMarkWatched,
   loading
 }: VideoListProps) {
   if (loading) {
@@ -37,7 +39,13 @@ export function VideoList({
   return (
     <div className="video-list">
       {videos.map((video) => (
-        <VideoCard key={video.id} video={video} onClick={onVideoClick} onDelete={onDelete} />
+        <VideoCard
+          key={video.id}
+          video={video}
+          onClick={onVideoClick}
+          onDelete={onDelete}
+          onMarkWatched={onMarkWatched}
+        />
       ))}
     </div>
   );

@@ -23,7 +23,6 @@ function App() {
       tg.ready();
       tg.expand();
 
-      // Set header color
       const bgColor = tg.themeParams.bg_color;
       if (bgColor) {
         tg.setHeaderColor(bgColor);
@@ -38,11 +37,9 @@ function App() {
       setLoading(true);
       setError(null);
 
-      // Get user info
       const userData = await api.getMe();
       setUser(userData.user);
 
-      // Get videos
       const videosData = await api.getVideos();
       setVideos(videosData.videos ?? []);
     } catch (err) {
@@ -57,7 +54,6 @@ function App() {
     void loadData();
   }, [loadData]);
 
-  // Delete video
   const handleDelete = async (id: number): Promise<void> => {
     try {
       await api.deleteVideo(id);
@@ -68,7 +64,6 @@ function App() {
     }
   };
 
-  // Mark as watched
   const handleMarkWatched = async (id: number, isWatched: boolean): Promise<void> => {
     try {
       const result = await api.markAsWatched(id, isWatched);
@@ -78,12 +73,10 @@ function App() {
     }
   };
 
-  // Open video player
   const handleVideoClick = (video: Video): void => {
     setSelectedVideo(video);
   };
 
-  // Close player
   const handleClosePlayer = (): void => {
     setSelectedVideo(null);
   };
@@ -104,7 +97,7 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>📺 Video Queue</h1>
+        <h1>📺 Видео</h1>
         {user && <span className="user-name">{user.firstName || user.username}</span>}
       </header>
 
@@ -114,6 +107,7 @@ function App() {
           loading={loading}
           onVideoClick={handleVideoClick}
           onDelete={handleDelete}
+          onMarkWatched={handleMarkWatched}
         />
       </main>
 
@@ -121,8 +115,6 @@ function App() {
         <Player
           video={selectedVideo}
           onClose={handleClosePlayer}
-          onDelete={handleDelete}
-          onMarkWatched={handleMarkWatched}
         />
       )}
     </div>

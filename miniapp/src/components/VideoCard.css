@@ -87,17 +87,50 @@
   color: var(--tg-theme-hint-color);
 }
 
-.video-delete-btn {
-  padding: 8px;
-  background: transparent;
+/* ── Action buttons column (right side) ─────────────────────────────────── */
+
+.video-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.video-delete-btn,
+.video-watched-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 8px;
   font-size: 16px;
-  opacity: 0.6;
+  background: transparent;
   transition: opacity 0.2s, background 0.2s;
+  opacity: 0.55;
 }
 
 .video-delete-btn:hover,
 .video-delete-btn:active {
   opacity: 1;
   background: rgba(255, 0, 0, 0.1);
+}
+
+.video-watched-btn {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tg-theme-hint-color);
+}
+
+.video-watched-btn:hover,
+.video-watched-btn:active {
+  opacity: 1;
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+}
+
+.video-watched-btn--active {
+  opacity: 1;
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.12);
 }

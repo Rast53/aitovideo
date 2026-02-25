@@ -23,10 +23,7 @@ const platformIcons: Record<VideoPlatform, string> = {
 };
 
 function formatDuration(seconds: number | null): string {
-  if (!seconds) {
-    return '';
-  }
-
+  if (!seconds) return '';
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -36,14 +33,22 @@ interface VideoCardProps {
   video: Video;
   onClick?: (video: Video) => void;
   onDelete?: (id: number) => void;
+  onMarkWatched?: (id: number, isWatched: boolean) => void;
 }
 
-export function VideoCard({ video, onClick, onDelete }: VideoCardProps) {
+export function VideoCard({ video, onClick, onDelete, onMarkWatched }: VideoCardProps) {
+  const isWatched = Boolean(video.is_watched);
+
   const handleDelete = (event: MouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation();
     if (window.confirm('Удалить видео из очереди?')) {
       onDelete?.(video.id);
     }
+  };
+
+  const handleWatched = (event: MouseEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    onMarkWatched?.(video.id, !isWatched);
   };
 
   const thumbnailSrc = getThumbnailSrc(video);
@@ -73,7 +78,7 @@ export function VideoCard({ video, onClick, onDelete }: VideoCardProps) {
         {video.duration !== null && video.duration > 0 && (
           <span className="video-duration">{formatDuration(video.duration)}</span>
         )}
-        {Boolean(video.is_watched) && <span className="video-watched-badge">✓</span>}
+        {isWatched && <span className="video-watched-badge">✓</span>}
       </div>
 
       <div className="video-info">
@@ -83,9 +88,24 @@ export function VideoCard({ video, onClick, onDelete }: VideoCardProps) {
         </p>
       </div>
 
-      <button className="video-delete-btn" onClick={handleDelete} title="Удалить">
-        🗑️
-      </button>
+      <div className="video-card-actions">
+        <button
+          className="video-delete-btn"
+          onClick={handleDelete}
+          title="Удалить"
+          aria-label="Удалить"
+        >
+          🗑️
+        </button>
+        <button
+          className={`video-watched-btn${isWatched ? ' video-watched-btn--active' : ''}`}
+          onClick={handleWatched}
+          title={isWatched ? 'Снять отметку' : 'Отметить просмотренным'}
+          aria-label={isWatched ? 'Снять отметку' : 'Отметить просмотренным'}
+        >
+          ✓
+        </button>
+      </div>
     </div>
   );
 }
