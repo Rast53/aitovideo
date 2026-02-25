@@ -3,6 +3,8 @@ import { api } from '../api';
 import type { Video, VideoPlatform, VideoProgress } from '../types/api';
 import './Player.css';
 
+const API_URL: string = import.meta.env.VITE_API_URL ?? '';
+
 const platformIcons: Record<VideoPlatform, string> = {
   youtube: '📺',
   rutube: '▶️',
@@ -38,23 +40,15 @@ function formatTime(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-// Piped.video instances — open-source YouTube proxy, streams go through Piped's
-// servers so the client never connects to youtube.com directly.
-// This bypasses both bot-detection and regional blocks.
-const PIPED_INSTANCES = [
-  'https://piped.video',
-  'https://piped.adminforge.de',
-  'https://piped.privacydev.net'
-];
-
+/**
+ * For YouTube we use our own backend proxy (yt-dlp on VPS) instead of iframes.
+ * This returns null for YouTube — the component renders a <video> tag instead.
+ */
 function getEmbedUrl(platform: VideoPlatform, externalId: string, startSeconds: number): string | null {
   const t = Math.floor(startSeconds);
   switch (platform) {
-    case 'youtube': {
-      // Use first Piped instance; if it fails the user can open externally
-      const piped = PIPED_INSTANCES[0];
-      return `${piped}/embed/${externalId}?autoplay=1${t > 0 ? `&start=${t}` : ''}`;
-    }
+    case 'youtube':
+      return null; // handled via <video> + backend proxy
     case 'rutube':
       return `https://rutube.ru/play/embed/${externalId}${t > 0 ? `?t=${t}` : ''}`;
     case 'vk': {
@@ -98,6 +92,8 @@ const SAVE_INTERVAL_MS = 10_000;
 
 export function Player({ video, onClose }: PlayerProps) {
   const [loading, setLoading] = useState(true);
+  const [videoError, setVideoError] = useState(false);
+  const nativeVideoRef = useRef<HTMLVideoElement>(null);
 
   // Progress / resume
   const [savedProgress, setSavedProgress] = useState<VideoProgress | null>(null);
@@ -223,10 +219,26 @@ export function Player({ video, onClose }: PlayerProps) {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
+  // ── Set currentTime for YouTube native video on load ─────────────────────
+  useEffect(() => {
+    if (video.platform !== 'youtube' || !playbackReady || !nativeVideoRef.current) return;
+    const el = nativeVideoRef.current;
+    const onMeta = () => {
+      if (startFrom > 0) el.currentTime = startFrom;
+    };
+    el.addEventListener('loadedmetadata', onMeta);
+    return () => el.removeEventListener('loadedmetadata', onMeta);
+  }, [video.platform, playbackReady, startFrom]);
+
   if (!video) return null;
 
   const isProgressLoading = !showResumeModal && !playbackReady;
+  const isYoutube = video.platform === 'youtube';
   const embedUrl = playbackReady ? getEmbedUrl(video.platform, video.external_id, startFrom) : null;
+  // YouTube stream goes through our backend proxy
+  const youtubeStreamUrl = playbackReady && isYoutube
+    ? `${API_URL}/api/youtube/stream/${video.external_id}`
+    : null;
 
   return (
     <div className="player-overlay" onClick={onClose}>
@@ -291,7 +303,22 @@ export function Player({ video, onClose }: PlayerProps) {
           <div className="player-loading"><div className="spinner" /></div>
         )}
 
-        {embedUrl ? (
+        {/* YouTube: native <video> via backend proxy */}
+        {youtubeStreamUrl && !videoError && (
+          <video
+            ref={nativeVideoRef}
+            className="player-native-video"
+            src={youtubeStreamUrl}
+            autoPlay
+            controls
+            playsInline
+            onCanPlay={() => setLoading(false)}
+            onError={() => { setLoading(false); setVideoError(true); }}
+          />
+        )}
+
+        {/* Rutube / VK: iframe embed */}
+        {embedUrl && (
           <iframe
             ref={iframeRef}
             src={embedUrl}
@@ -301,10 +328,11 @@ export function Player({ video, onClose }: PlayerProps) {
             allowFullScreen
             onLoad={() => setLoading(false)}
           />
-        ) : (
-          !isProgressLoading && !showResumeModal && (
-            <div className="player-error">Не удалось загрузить видео</div>
-          )
+        )}
+
+        {/* Error / no source */}
+        {!isProgressLoading && !showResumeModal && !embedUrl && (!youtubeStreamUrl || videoError) && (
+          <div className="player-error">Не удалось загрузить видео</div>
         )}
       </div>
     </div>

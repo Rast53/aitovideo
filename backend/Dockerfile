@@ -19,8 +19,10 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Native runtime libs for better-sqlite3
-RUN apk add --no-cache python3 make g++
+# Native runtime libs for better-sqlite3 + Python + yt-dlp for YouTube streaming
+RUN apk add --no-cache python3 py3-pip make g++ \
+    && python3 -m pip install --break-system-packages --quiet yt-dlp \
+    && yt-dlp --version
 
 COPY package*.json ./
 RUN npm install --omit=dev

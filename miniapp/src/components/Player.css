@@ -81,6 +81,18 @@
   animation: fade-out-btn 3s ease forwards;
 }
 
+/* ── Native video (YouTube proxy) ───────────────────────────────────────── */
+
+.player-native-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  /* Show browser native controls */
+  display: block;
+}
+
 /* ── Loading spinner ─────────────────────────────────────────────────────── */
 
 .player-loading {

@@ -6,6 +6,7 @@ import progressRouter from './routes/progress.js';
 import proxyRouter from './routes/proxy.js';
 import userRouter from './routes/user.js';
 import videosRouter from './routes/videos.js';
+import youtubeRouter from './routes/youtube.js';
 
 dotenv.config();
 
@@ -23,6 +24,7 @@ app.get('/health', (_req: Request, res: Response) => {
 
 // Public routes (no auth required)
 app.use('/api/proxy', proxyRouter);
+app.use('/api/youtube', youtubeRouter);
 app.use('/api/videos', optionalTelegramAuth, videosRouter);
 
 // Protected routes (require Telegram auth)
