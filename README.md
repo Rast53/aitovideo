@@ -4,87 +4,121 @@ Telegram Mini App для управления очередью видео с You
 
 ## Как работает
 
-1. Отправляешь боту ссылку на видео
-2. Бот сохраняет название, канал, превью
-3. Открываешь Mini App на любом устройстве
-4. Смотришь видео через встроенный плеер
-
-## Быстрый старт
-
-### 1. Клонирование и установка
-
-```bash
-git clone https://github.com/Rast53/aitovideo.git
-cd aitovideo
-
-# Backend
-cd backend
-cp .env.example .env
-# Отредактируй .env, добавь BOT_TOKEN
-npm install
-
-# Mini App
-cd ../miniapp
-npm install
-```
-
-### 2. Запуск для разработки
-
-```bash
-# Terminal 1 - Backend API
-cd backend
-npm run dev
-
-# Terminal 2 - Bot
-cd backend
-npm run bot
-
-# Terminal 3 - Mini App
-cd miniapp
-npm run dev
-```
-
-### 3. Деплой на VPS
-
-```bash
-./deploy.sh
-```
-
-## Настройка бота
-
-1. Напиши @BotFather в Telegram
-2. Создай нового бота: `/newbot`
-3. Получи токен, добавь в `.env`
-4. Настрой Mini App: `/mybots` → твой бот → Bot Settings → Menu Button → Configure menu button
-5. Укажи URL Mini App
+1. Отправляешь боту ссылку на видео (YouTube / Rutube / VK)
+2. Бот парсит название, канал, превью и сохраняет в очередь
+3. Открываешь Mini App — видишь список с превью
+4. Нажимаешь на видео — плеер открывается сразу в полноэкранном режиме
+5. Прогресс просмотра сохраняется автоматически; при следующем открытии предложит продолжить с того же места
+6. В очереди: кнопка ✓ отмечает видео просмотренным, 🗑️ удаляет
 
 ## Стек
 
-- **Backend:** Node.js + TypeScript + Express + SQLite
-- **Mini App:** React + TypeScript + Vite
+- **Backend:** Node.js + TypeScript + Express + SQLite (better-sqlite3)
 - **Bot:** node-telegram-bot-api
+- **Mini App:** React + TypeScript + Vite
+- **Деплой:** Docker Swarm + Portainer + Traefik
 
 ## Структура проекта
 
 ```
 aitovideo/
-├── backend/           # Node.js API + Bot
-│   ├── src/
-│   │   ├── api/       # Express REST API
-│   │   ├── bot/       # Telegram bot
-│   │   ├── models/    # Database models
-│   │   ├── services/  # Video parsers
-│   │   └── types/     # TypeScript types
-│   └── tsconfig.json
-├── miniapp/           # React Mini App
-│   ├── src/
-│   │   ├── components/
-│   │   └── types/
-│   └── tsconfig.json
-├── .gitignore
-├── .dockerignore
-└── deploy.sh
+├── backend/
+│   └── src/
+│       ├── api/
+│       │   ├── middleware/   # Telegram auth
+│       │   └── routes/
+│       │       ├── videos.ts    # CRUD видео
+│       │       ├── progress.ts  # Сохранение позиции просмотра
+│       │       ├── proxy.ts     # Прокси превью (VK CDN)
+│       │       └── user.ts
+│       ├── bot/              # Telegram бот
+│       ├── models/           # DB-модели
+│       ├── services/
+│       │   ├── vk.ts         # Парсинг VK (Googlebot scraping)
+│       │   ├── youtube.ts
+│       │   └── rutube.ts
+│       └── db.ts             # SQLite инициализация
+├── miniapp/
+│   └── src/
+│       ├── components/
+│       │   ├── Player.tsx    # Полноэкранный плеер с resume
+│       │   ├── VideoCard.tsx # Карточка с кнопками ✓ и 🗑️
+│       │   └── VideoList.tsx
+│       └── api.ts            # Клиент для backend API
+├── docker-compose.yml
+├── deploy.sh      # Linux/Mac: сборка и пуш образов
+└── deploy.ps1     # Windows PowerShell: то же самое
 ```
+
+## Переменные окружения
+
+| Переменная | Где | Описание |
+|---|---|---|
+| `BOT_TOKEN` | backend, bot | Токен от @BotFather |
+| `AITOVIDEO_DOMAIN` | stack env | Домен Mini App (без https://) |
+| `DATABASE_URL` | backend | Путь к SQLite (по умолчанию `/app/data/videos.db`) |
+| `VK_SERVICE_TOKEN` | backend, bot | Опционально: сервисный ключ VK Standalone-приложения для `video.get` API |
+
+## Деплой на VPS (Docker Swarm + Portainer)
+
+### 1. Первичная настройка стека
+
+В Portainer → Stacks → Add stack → вставить содержимое `docker-compose.yml`.
+
+Задать переменные окружения:
+```
+BOT_TOKEN=<токен бота>
+AITOVIDEO_DOMAIN=<твой домен>
+VK_SERVICE_TOKEN=<опционально>
+```
+
+### 2. Обновление после изменений
+
+**Windows (PowerShell):**
+```powershell
+.\deploy.ps1
+# или с версией:
+.\deploy.ps1 1.2.0
+```
+
+**Linux / Mac:**
+```bash
+./deploy.sh
+# или с версией:
+./deploy.sh 1.2.0
+```
+
+После пуша образов в Portainer:
+- Зайди в стек `aitovideo`
+- Нажми **Force update** для сервисов `backend`, `bot`, `miniapp`
+
+## Настройка бота
+
+1. Напиши @BotFather в Telegram
+2. Создай бота: `/newbot`
+3. Настрой Menu Button: `/mybots` → твой бот → Bot Settings → Menu Button
+4. Укажи URL Mini App: `https://<твой домен>`
+
+## Разработка локально
+
+```bash
+# Backend
+cd backend
+cp .env.example .env   # добавь BOT_TOKEN
+npm install
+npm run dev            # API на :3000
+
+# Bot (отдельный терминал)
+cd backend
+npm run bot
+
+# Mini App
+cd miniapp
+npm install
+npm run dev            # Vite dev server на :5173
+```
+
+> Тестирование производится в тестовом контуре на VPS. Запуск локально только для быстрой проверки кода.
 
 ## Лицензия
 

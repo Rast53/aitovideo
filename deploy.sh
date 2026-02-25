@@ -1,45 +1,49 @@
 #!/bin/bash
-
-# Deploy script for aitovideo on VPS
+# Build and push Docker images to Docker Hub
+# Usage: ./deploy.sh [version]
+# Example: ./deploy.sh 1.0.0
 
 set -e
 
-PROJECT_DIR="/var/www/aitovideo"
-DOMAIN="ra.nov.ru"
+VERSION="${1:-latest}"
+DOCKER_HUB_USER="rast53"
+BACKEND_IMAGE="$DOCKER_HUB_USER/aitovideo-backend"
+MINIAPP_IMAGE="$DOCKER_HUB_USER/aitovideo-miniapp"
 
-echo "🚀 Deploying AitoVideo..."
+echo "🚀 Building AitoVideo Docker images (version: $VERSION)..."
 
-# Create directories
-mkdir -p $PROJECT_DIR/data
+# Build backend
+echo ""
+echo "🔨 Building backend..."
+docker build -t "${BACKEND_IMAGE}:${VERSION}" ./backend
 
-# Copy backend
-echo "📁 Copying backend..."
-cp -r backend $PROJECT_DIR/
+if [ "$VERSION" != "latest" ]; then
+  docker tag "${BACKEND_IMAGE}:${VERSION}" "${BACKEND_IMAGE}:latest"
+fi
 
 # Build miniapp
-echo "🔨 Building Mini App..."
-cd miniapp
-npm install
-npm run build
-mkdir -p $PROJECT_DIR/miniapp
-cp -r dist/* $PROJECT_DIR/miniapp/
+echo ""
+echo "🔨 Building miniapp..."
+docker build -t "${MINIAPP_IMAGE}:${VERSION}" ./miniapp
 
-# Install backend dependencies
-echo "📦 Installing dependencies..."
-cd $PROJECT_DIR/backend
-npm install
+if [ "$VERSION" != "latest" ]; then
+  docker tag "${MINIAPP_IMAGE}:${VERSION}" "${MINIAPP_IMAGE}:latest"
+fi
 
-# Setup PM2
-echo "🔄 Setting up PM2..."
-pm2 delete aitovideo-api 2>/dev/null || true
-pm2 delete aitovideo-bot 2>/dev/null || true
-pm2 start src/api/index.ts --name aitovideo-api
-pm2 start src/bot/index.ts --name aitovideo-bot
-pm2 save
+# Push to Docker Hub
+echo ""
+echo "📤 Pushing to Docker Hub..."
+docker push "${BACKEND_IMAGE}:${VERSION}"
+docker push "${MINIAPP_IMAGE}:${VERSION}"
+
+if [ "$VERSION" != "latest" ]; then
+  docker push "${BACKEND_IMAGE}:latest"
+  docker push "${MINIAPP_IMAGE}:latest"
+fi
 
 echo ""
-echo "✅ Deployment complete!"
+echo "✅ Done! Images pushed to Docker Hub:"
+echo "   ${BACKEND_IMAGE}:${VERSION}"
+echo "   ${MINIAPP_IMAGE}:${VERSION}"
 echo ""
-echo "Next steps:"
-echo "1. Ensure nginx is configured for $DOMAIN"
-echo "2. Test bot: send /start to @VideoQueueBot"
+echo "➡️  In Portainer: force-update services 'backend', 'bot' and 'miniapp' in stack 'aitovideo'."
