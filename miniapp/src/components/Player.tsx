@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Video, VideoPlatform, VideoProgress } from '../types/api';
 import './Player.css';
@@ -30,121 +30,229 @@ type ExtendedScreenOrientation = ScreenOrientation & {
   unlock?: () => void;
 };
 
-function formatTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) {
-    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+// ─── YouTube IFrame API ────────────────────────────────────────────────────────
+
+interface YTPlayerOptions {
+  videoId: string;
+  playerVars?: { autoplay?: number; start?: number };
+  events?: {
+    onReady?: () => void;
+    onError?: () => void;
+  };
+}
+
+interface YTPlayer {
+  getCurrentTime(): number;
+  destroy(): void;
+}
+
+declare global {
+  interface Window {
+    YT?: { Player: new (el: HTMLElement, opts: YTPlayerOptions) => YTPlayer };
+    onYouTubeIframeAPIReady?: () => void;
   }
+}
+
+// Singleton loader — handles multiple Player mounts correctly
+let ytApiLoaded = false;
+const ytReadyQueue: Array<() => void> = [];
+
+function whenYtReady(cb: () => void): void {
+  if (ytApiLoaded && window.YT?.Player) {
+    cb();
+    return;
+  }
+  ytReadyQueue.push(cb);
+  if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+    window.onYouTubeIframeAPIReady = () => {
+      ytApiLoaded = true;
+      for (const fn of ytReadyQueue) fn();
+      ytReadyQueue.length = 0;
+    };
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatTime(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-// Minimum position (seconds) worth saving/resuming from
-const MIN_RESUME_POSITION = 10;
-// Save progress every N seconds of elapsed watch time
+function getNonYtEmbedUrl(platform: VideoPlatform, externalId: string, startSeconds: number): string | null {
+  const t = Math.floor(startSeconds);
+  if (platform === 'rutube') {
+    return `https://rutube.ru/play/embed/${externalId}${t > 0 ? `?t=${t}` : ''}`;
+  }
+  if (platform === 'vk') {
+    const [oid, vid] = externalId.split('_');
+    if (!oid || !vid) return null;
+    return `https://vk.com/video_ext.php?oid=${oid}&id=${vid}&hd=2&autoplay=1`;
+  }
+  return null;
+}
+
+const MIN_RESUME_SECONDS = 10;
 const SAVE_INTERVAL_MS = 10_000;
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps) {
   const [loading, setLoading] = useState(true);
   const [isCinemaMode, setIsCinemaMode] = useState(false);
 
-  // Progress / resume state
+  // Progress / resume
   const [savedProgress, setSavedProgress] = useState<VideoProgress | null>(null);
   const [showResumeModal, setShowResumeModal] = useState(false);
-  const [resumeFrom, setResumeFrom] = useState(0);
-  const [progressLoading, setProgressLoading] = useState(true);
+  const [startFrom, setStartFrom] = useState(0);
+  // True once the user has decided (resume or from start) and playback should begin
+  const [playbackReady, setPlaybackReady] = useState(false);
 
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  // DOM refs
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const ytContainerRef = useRef<HTMLDivElement>(null);
 
-  // Track elapsed seconds since playback started
-  const elapsedRef = useRef(0);
+  // Playback tracking refs (mutable, no re-render needed)
+  const ytPlayerRef = useRef<YTPlayer | null>(null);
+  const elapsedRef = useRef(0);          // for Rutube/VK: seconds since playback started
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startPositionRef = useRef(0);
+  // Keep stable references to video.id and platform without extra deps
+  const videoIdRef = useRef(video.id);
+  const platformRef = useRef(video.platform);
+  useEffect(() => { videoIdRef.current = video.id; }, [video.id]);
+  useEffect(() => { platformRef.current = video.platform; }, [video.platform]);
 
-  // Fetch saved progress on mount
+  // ── Helpers for reading current position ──────────────────────────────────
+  // YouTube: getCurrentTime() reflects actual seek position — accurate even after scrubbing
+  // Rutube/VK: elapsed timer is an approximation (cross-origin iframe has no API)
+  function readPosition(): number {
+    if (platformRef.current === 'youtube' && ytPlayerRef.current) {
+      try { return Math.floor(ytPlayerRef.current.getCurrentTime()); }
+      catch { /* player not ready yet */ }
+    }
+    return elapsedRef.current;
+  }
+
+  function clearTimers() {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (saveTimerRef.current) { clearInterval(saveTimerRef.current); saveTimerRef.current = null; }
+  }
+
+  // ── Unmount: flush position and clean up ──────────────────────────────────
+  useEffect(() => {
+    return () => {
+      clearTimers();
+      const pos = readPosition();
+      if (pos >= MIN_RESUME_SECONDS) {
+        api.saveProgress(videoIdRef.current, pos).catch(() => {});
+      }
+      ytPlayerRef.current?.destroy();
+      ytPlayerRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Fetch saved progress on mount ─────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-    setProgressLoading(true);
-
     api.getProgress(video.id)
       .then((res) => {
         if (cancelled) return;
         const p = res.progress;
-        if (p && p.position_seconds >= MIN_RESUME_POSITION) {
+        if (p && p.position_seconds >= MIN_RESUME_SECONDS) {
           setSavedProgress(p);
           setShowResumeModal(true);
         } else {
-          setSavedProgress(null);
-          setShowResumeModal(false);
+          // No meaningful progress — start immediately
+          setPlaybackReady(true);
         }
       })
       .catch(() => {
-        // Ignore errors — just start from beginning
-      })
-      .finally(() => {
-        if (!cancelled) setProgressLoading(false);
+        if (!cancelled) setPlaybackReady(true);
       });
-
     return () => { cancelled = true; };
   }, [video.id]);
 
-  // Start tracking elapsed time once iframe loads (after resume decision)
-  const startTracking = useCallback((fromSeconds: number) => {
-    startPositionRef.current = fromSeconds;
-    elapsedRef.current = fromSeconds;
+  // ── YouTube: initialize IFrame Player once playback is ready ─────────────
+  useEffect(() => {
+    if (!playbackReady || video.platform !== 'youtube') return;
 
-    // Increment elapsed every second
-    timerRef.current = setInterval(() => {
-      elapsedRef.current += 1;
-    }, 1000);
+    const from = startFrom;
+    let destroyed = false;
 
-    // Save progress every SAVE_INTERVAL_MS
+    const createPlayer = () => {
+      if (destroyed || !ytContainerRef.current) return;
+
+      ytPlayerRef.current = new window.YT!.Player(ytContainerRef.current, {
+        videoId: video.external_id,
+        playerVars: { autoplay: 1, start: Math.floor(from) },
+        events: {
+          onReady: () => {
+            if (destroyed) return;
+            setLoading(false);
+            // Periodic save using actual getCurrentTime — reflects seeks
+            if (saveTimerRef.current) clearInterval(saveTimerRef.current);
+            saveTimerRef.current = setInterval(() => {
+              if (!ytPlayerRef.current) return;
+              try {
+                const pos = Math.floor(ytPlayerRef.current.getCurrentTime());
+                if (pos >= MIN_RESUME_SECONDS) {
+                  api.saveProgress(videoIdRef.current, pos).catch(() => {});
+                }
+              } catch { /* player not ready */ }
+            }, SAVE_INTERVAL_MS);
+          },
+          onError: () => setLoading(false),
+        },
+      });
+    };
+
+    whenYtReady(createPlayer);
+
+    return () => { destroyed = true; };
+  }, [playbackReady, video.platform, video.external_id, startFrom]);
+
+  // ── Rutube / VK: elapsed timer (approximate — cross-origin iframe) ────────
+  useEffect(() => {
+    if (!playbackReady || video.platform === 'youtube') return;
+
+    // Start elapsed counting from the resume position, not from zero
+    elapsedRef.current = startFrom;
+
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => { elapsedRef.current += 1; }, 1000);
+
+    if (saveTimerRef.current) clearInterval(saveTimerRef.current);
     saveTimerRef.current = setInterval(() => {
       const pos = elapsedRef.current;
-      if (pos >= MIN_RESUME_POSITION) {
-        api.saveProgress(video.id, pos).catch(() => { /* silent */ });
+      if (pos >= MIN_RESUME_SECONDS) {
+        api.saveProgress(videoIdRef.current, pos).catch(() => {});
       }
     }, SAVE_INTERVAL_MS);
-  }, [video.id]);
 
-  const stopTracking = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    if (saveTimerRef.current) {
-      clearInterval(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    return clearTimers;
+  }, [playbackReady, video.platform, startFrom]);
+
+  // ── Telegram expand ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (window.Telegram?.WebApp) window.Telegram.WebApp.expand();
   }, []);
 
-  // Save progress on unmount
-  useEffect(() => {
-    return () => {
-      stopTracking();
-      const pos = elapsedRef.current;
-      if (pos >= MIN_RESUME_POSITION) {
-        api.saveProgress(video.id, pos).catch(() => { /* silent */ });
-      }
-    };
-  }, [video.id, stopTracking]);
-
-  // Отслеживаем выход из нативного fullscreen (например, через кнопку назад)
-  useEffect(() => {
-    if (window.Telegram?.WebApp) {
-      window.Telegram.WebApp.expand();
-    }
-  }, []);
-
+  // ── Fullscreen change tracking ────────────────────────────────────────────
   useEffect(() => {
     const handleFsChange = () => {
       const doc = document as ExtendedDocument;
-      const isNativeFsActive = !!(document.fullscreenElement || doc.webkitFullscreenElement);
-      if (!isNativeFsActive && isCinemaMode) {
-        // нативный fullscreen закрылся, кино-режим (скрытые панели) оставляем
+      const active = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+      if (!active && isCinemaMode) {
+        // native FS ended but we keep cinema mode (hidden panels)
       }
     };
     document.addEventListener('fullscreenchange', handleFsChange);
@@ -155,107 +263,64 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
     };
   }, [isCinemaMode]);
 
+  // ── Cinema mode ───────────────────────────────────────────────────────────
   const enterCinemaMode = async () => {
     if (window.Telegram?.WebApp?.requestFullscreen) {
       try { window.Telegram.WebApp.requestFullscreen(); } catch { /* не поддерживается */ }
     }
-
     const el = wrapperRef.current as ExtendedHTMLElement | null;
     if (el && !document.fullscreenElement) {
       try {
-        if (el.requestFullscreen) {
-          await el.requestFullscreen();
-        } else if (el.webkitRequestFullscreen) {
-          el.webkitRequestFullscreen();
-        }
-      } catch { /* WebView не поддерживает Fullscreen API */ }
+        if (el.requestFullscreen) await el.requestFullscreen();
+        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      } catch { /* WebView */ }
     }
-
     try {
-      const orientation = screen.orientation as ExtendedScreenOrientation;
-      if (orientation?.lock) { await orientation.lock('landscape'); }
-    } catch { /* Screen Orientation API недоступен */ }
-
+      const o = screen.orientation as ExtendedScreenOrientation;
+      if (o?.lock) await o.lock('landscape');
+    } catch { /* */ }
     setIsCinemaMode(true);
   };
 
   const exitCinemaMode = async () => {
     const doc = document as ExtendedDocument;
     if (document.fullscreenElement) {
-      try { await document.exitFullscreen(); } catch { /* игнорируем */ }
+      try { await document.exitFullscreen(); } catch { /* */ }
     } else if (doc.webkitFullscreenElement && doc.webkitExitFullscreen) {
-      try { doc.webkitExitFullscreen(); } catch { /* игнорируем */ }
+      try { doc.webkitExitFullscreen(); } catch { /* */ }
     }
-
     if (window.Telegram?.WebApp?.exitFullscreen) {
-      try { window.Telegram.WebApp.exitFullscreen(); } catch { /* игнорируем */ }
+      try { window.Telegram.WebApp.exitFullscreen(); } catch { /* */ }
     }
-
     try {
-      const orientation = screen.orientation as ExtendedScreenOrientation;
-      if (orientation?.unlock) { orientation.unlock(); }
-    } catch { /* игнорируем */ }
-
+      const o = screen.orientation as ExtendedScreenOrientation;
+      if (o?.unlock) o.unlock();
+    } catch { /* */ }
     setIsCinemaMode(false);
   };
 
-  if (!video) return null;
-
-  const getEmbedUrl = (startSeconds = 0): string | null => {
-    const t = Math.floor(startSeconds);
-    switch (video.platform) {
-      case 'youtube':
-        return `https://www.youtube-nocookie.com/embed/${video.external_id}?autoplay=1${t > 0 ? `&start=${t}` : ''}`;
-      case 'rutube':
-        return `https://rutube.ru/play/embed/${video.external_id}${t > 0 ? `?t=${t}` : ''}`;
-      case 'vk': {
-        const [oid, vid] = video.external_id.split('_');
-        if (!oid || !vid) return null;
-        return `https://vk.com/video_ext.php?oid=${oid}&id=${vid}&hd=2&autoplay=1`;
-      }
-      default:
-        return null;
-    }
-  };
-
+  // ── Resume handlers ───────────────────────────────────────────────────────
   const handleResumeYes = () => {
-    const pos = savedProgress?.position_seconds ?? 0;
-    setResumeFrom(pos);
+    setStartFrom(savedProgress?.position_seconds ?? 0);
     setShowResumeModal(false);
-    startTracking(pos);
+    setPlaybackReady(true);
   };
 
   const handleResumeNo = () => {
-    setResumeFrom(0);
+    setStartFrom(0);
     setShowResumeModal(false);
-    startTracking(0);
-    // Reset progress to 0 on server
-    api.saveProgress(video.id, 0).catch(() => { /* silent */ });
+    setPlaybackReady(true);
+    api.saveProgress(video.id, 0).catch(() => {});
   };
 
-  const handleIframeLoad = () => {
-    setLoading(false);
-    // Start tracking only if resume modal is not shown (user already made a decision)
-    if (!showResumeModal && timerRef.current === null) {
-      startTracking(resumeFrom);
-    }
-  };
+  // ─────────────────────────────────────────────────────────────────────────
+  if (!video) return null;
 
-  const embedUrl = getEmbedUrl(resumeFrom);
   const isWatched = Boolean(video.is_watched);
-
-  // Show loading spinner while fetching saved progress
-  if (progressLoading) {
-    return (
-      <div className="player-overlay">
-        <div className="player-container">
-          <div className="player-loading">
-            <div className="spinner" />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const isProgressLoading = !showResumeModal && !playbackReady;
+  const nonYtUrl = video.platform !== 'youtube' && playbackReady
+    ? getNonYtEmbedUrl(video.platform, video.external_id, startFrom)
+    : null;
 
   return (
     <div
@@ -266,7 +331,7 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
         className={`player-container${isCinemaMode ? ' player-container--cinema' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Resume modal */}
+        {/* ── Resume modal ─────────────────────────────────────────────── */}
         {showResumeModal && savedProgress && (
           <div className="resume-modal-overlay" onClick={(e) => e.stopPropagation()}>
             <div className="resume-modal">
@@ -287,15 +352,11 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
           </div>
         )}
 
-        {/* Шапка скрывается в кино-режиме */}
+        {/* ── Header ───────────────────────────────────────────────────── */}
         {!isCinemaMode && (
           <div className="player-header">
-            <button className="player-close-btn" onClick={onClose} aria-label="Закрыть">
-              ✕
-            </button>
-            <div className="player-title">
-              {platformIcons[video.platform]} {video.title}
-            </div>
+            <button className="player-close-btn" onClick={onClose} aria-label="Закрыть">✕</button>
+            <div className="player-title">{platformIcons[video.platform]} {video.title}</div>
             <button
               className="player-cinema-btn"
               onClick={enterCinemaMode}
@@ -309,30 +370,34 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
           </div>
         )}
 
-        {/* Зона видео */}
+        {/* ── Video area ───────────────────────────────────────────────── */}
         <div className="player-video-wrapper" ref={wrapperRef}>
-          {loading && !showResumeModal && (
-            <div className="player-loading">
-              <div className="spinner" />
-            </div>
+          {(loading || isProgressLoading) && (
+            <div className="player-loading"><div className="spinner" /></div>
           )}
-          {!showResumeModal && (
-            embedUrl ? (
+
+          {/* YouTube: div container — YT API injects <iframe> inside it */}
+          {video.platform === 'youtube' && playbackReady && (
+            <div ref={ytContainerRef} className="yt-player-host" />
+          )}
+
+          {/* Rutube / VK: standard cross-origin iframe */}
+          {video.platform !== 'youtube' && playbackReady && (
+            nonYtUrl ? (
               <iframe
                 ref={iframeRef}
-                src={embedUrl}
+                src={nonYtUrl}
                 title={video.title}
                 frameBorder="0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                 allowFullScreen
-                onLoad={handleIframeLoad}
+                onLoad={() => setLoading(false)}
               />
             ) : (
               <div className="player-error">Не удалось загрузить видео</div>
             )
           )}
 
-          {/* Плавающая кнопка выхода из кино-режима */}
           {isCinemaMode && (
             <button
               className="player-exit-cinema-btn"
@@ -347,15 +412,12 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
           )}
         </div>
 
-        {/* Кнопки действий скрываются в кино-режиме */}
+        {/* ── Actions ──────────────────────────────────────────────────── */}
         {!isCinemaMode && (
           <div className="player-actions">
             <button
               className="player-action-btn player-action-watched"
-              onClick={() => {
-                onMarkWatched?.(video.id, !isWatched);
-                onClose();
-              }}
+              onClick={() => { onMarkWatched?.(video.id, !isWatched); onClose(); }}
             >
               {isWatched ? '✓ Просмотрено' : '👁 Отметить просмотренным'}
             </button>
