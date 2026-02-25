@@ -59,9 +59,11 @@ aitovideo/
 | `DATABASE_URL` | backend | Путь к SQLite (по умолчанию `/app/data/videos.db`) |
 | `VK_SERVICE_TOKEN` | backend, bot | Опционально: сервисный ключ VK Standalone-приложения для `video.get` API |
 
-## Деплой на VPS (Docker Swarm + Portainer)
+## Деплой
 
-### 1. Первичная настройка стека
+Два варианта в зависимости от инфраструктуры:
+
+### Вариант A: Docker Swarm + Portainer (рекомендуется для кластера)
 
 В Portainer → Stacks → Add stack → вставить содержимое `docker-compose.yml`.
 
@@ -72,25 +74,42 @@ AITOVIDEO_DOMAIN=<твой домен>
 VK_SERVICE_TOKEN=<опционально>
 ```
 
-### 2. Обновление после изменений
+После изменений кода — собери и запуши образы:
 
 **Windows (PowerShell):**
 ```powershell
-.\deploy.ps1
-# или с версией:
-.\deploy.ps1 1.2.0
+.\deploy.ps1         # или .\deploy.ps1 1.2.0
 ```
 
 **Linux / Mac:**
 ```bash
-./deploy.sh
-# или с версией:
-./deploy.sh 1.2.0
+./deploy.sh          # или ./deploy.sh 1.2.0
 ```
 
-После пуша образов в Portainer:
-- Зайди в стек `aitovideo`
-- Нажми **Force update** для сервисов `backend`, `bot`, `miniapp`
+Затем в Portainer → стек `aitovideo` → **Force update** для `backend`, `bot`, `miniapp`.
+
+---
+
+### Вариант B: Обычный VPS (Docker Compose + Nginx + Let's Encrypt)
+
+Подробная инструкция: [`vps/README.md`](vps/README.md)
+
+**Быстрый старт:**
+```bash
+git clone https://github.com/Rast53/aitovideo.git
+cd aitovideo
+chmod +x vps/setup-vps.sh
+sudo ./vps/setup-vps.sh
+```
+
+Скрипт установит Docker, получит SSL-сертификат и запустит все сервисы.
+
+Для обновления после публикации новых образов:
+```bash
+cd /opt/aitovideo && git pull
+docker compose -f docker-compose.standalone.yml pull
+docker compose -f docker-compose.standalone.yml up -d
+```
 
 ## Настройка бота
 

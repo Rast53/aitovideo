@@ -1,0 +1,79 @@
+# Docker Compose для обычного VPS (без Docker Swarm и Traefik).
+# Использует bridge-сеть, Nginx как реверс-прокси и Certbot для SSL.
+#
+# Использование:
+#   cp .env.example .env        # заполни переменные
+#   docker compose -f docker-compose.standalone.yml up -d
+
+services:
+  miniapp:
+    image: rast53/aitovideo-miniapp:latest
+    restart: unless-stopped
+    networks:
+      - aitovideo-net
+
+  backend:
+    image: rast53/aitovideo-backend:latest
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BOT_TOKEN=${BOT_TOKEN}
+      - DATABASE_URL=/app/data/videos.db
+      - MINI_APP_URL=https://${AITOVIDEO_DOMAIN}
+      - VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-}
+    volumes:
+      - backend-data:/app/data
+    networks:
+      - aitovideo-net
+
+  bot:
+    image: rast53/aitovideo-backend:latest
+    command: ["node", "dist/bot/index.js"]
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - BOT_TOKEN=${BOT_TOKEN}
+      - API_URL=http://backend:3000
+      - MINI_APP_URL=https://${AITOVIDEO_DOMAIN}
+      - VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-}
+    networks:
+      - aitovideo-net
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./vps/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-certs:/etc/letsencrypt:ro
+    environment:
+      - AITOVIDEO_DOMAIN=${AITOVIDEO_DOMAIN}
+    networks:
+      - aitovideo-net
+    depends_on:
+      - miniapp
+      - backend
+
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - certbot-www:/var/www/certbot
+      - certbot-certs:/etc/letsencrypt
+    # Auto-renew every 12 hours
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;'"
+
+volumes:
+  backend-data:
+  certbot-www:
+  certbot-certs:
+
+networks:
+  aitovideo-net:
+    driver: bridge
