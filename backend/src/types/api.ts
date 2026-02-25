@@ -49,3 +49,24 @@ export interface TelegramAuthResult {
   user?: TelegramUser | null;
   error?: string;
 }
+
+export interface VideoProgress {
+  id: number;
+  user_id: number;
+  video_id: number;
+  position_seconds: number;
+  updated_at: string;
+}
+
+export interface GetProgressResponse {
+  progress: VideoProgress | null;
+}
+
+export interface SaveProgressRequestBody {
+  video_id: number;
+  position_seconds: number;
+}
+
+export interface SaveProgressResponse {
+  progress: VideoProgress;
+}

@@ -152,6 +152,78 @@
   animation: none;
 }
 
+/* Resume modal */
+.resume-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  padding: 24px;
+}
+
+.resume-modal {
+  background: var(--tg-theme-bg-color, #fff);
+  border-radius: 16px;
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 320px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.resume-modal__icon {
+  font-size: 36px;
+  line-height: 1;
+}
+
+.resume-modal__text {
+  font-size: 16px;
+  color: var(--tg-theme-text-color, #000);
+  text-align: center;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.resume-modal__text strong {
+  color: var(--tg-theme-button-color, #2196f3);
+}
+
+.resume-modal__actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.resume-modal__btn {
+  flex: 1;
+  padding: 13px 16px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.resume-modal__btn:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+.resume-modal__btn--primary {
+  background: var(--tg-theme-button-color, #2196f3);
+  color: var(--tg-theme-button-text-color, #fff);
+}
+
+.resume-modal__btn--secondary {
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  color: var(--tg-theme-text-color, #333);
+}
+
 .player-actions {
   display: flex;
   gap: 12px;

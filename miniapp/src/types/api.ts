@@ -41,3 +41,19 @@ export interface MarkAsWatchedResponse {
 export interface ErrorPayload {
   error?: string;
 }
+
+export interface VideoProgress {
+  id: number;
+  user_id: number;
+  video_id: number;
+  position_seconds: number;
+  updated_at: string;
+}
+
+export interface GetProgressResponse {
+  progress: VideoProgress | null;
+}
+
+export interface SaveProgressResponse {
+  progress: VideoProgress;
+}

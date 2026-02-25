@@ -2,8 +2,10 @@ import type {
   DeleteVideoResponse,
   ErrorPayload,
   GetMeResponse,
+  GetProgressResponse,
   GetVideosResponse,
-  MarkAsWatchedResponse
+  MarkAsWatchedResponse,
+  SaveProgressResponse
 } from './types/api';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
@@ -50,6 +52,16 @@ export const api = {
     fetchWithAuth<MarkAsWatchedResponse>(`/api/videos/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ isWatched })
+    }),
+
+  // Progress
+  getProgress: (videoId: number): Promise<GetProgressResponse> =>
+    fetchWithAuth<GetProgressResponse>(`/api/progress/${videoId}`),
+
+  saveProgress: (videoId: number, positionSeconds: number): Promise<SaveProgressResponse> =>
+    fetchWithAuth<SaveProgressResponse>('/api/progress', {
+      method: 'POST',
+      body: JSON.stringify({ video_id: videoId, position_seconds: positionSeconds })
     })
 };
 

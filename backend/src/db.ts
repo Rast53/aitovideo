@@ -46,9 +46,24 @@ function initTables(): void {
     )
   `);
 
+  // Video progress table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS video_progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      video_id INTEGER NOT NULL,
+      position_seconds INTEGER NOT NULL DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
+      UNIQUE(user_id, video_id)
+    )
+  `);
+
   // Indexes
   db.exec('CREATE INDEX IF NOT EXISTS idx_videos_user_id ON videos(user_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_progress_user_video ON video_progress(user_id, video_id)');
 }
 
 initTables();

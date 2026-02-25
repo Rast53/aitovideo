@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import type { Video, VideoPlatform } from '../types/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { api } from '../api';
+import type { Video, VideoPlatform, VideoProgress } from '../types/api';
 import './Player.css';
 
 const platformIcons: Record<VideoPlatform, string> = {
@@ -29,25 +30,121 @@ type ExtendedScreenOrientation = ScreenOrientation & {
   unlock?: () => void;
 };
 
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Minimum position (seconds) worth saving/resuming from
+const MIN_RESUME_POSITION = 10;
+// Save progress every N seconds of elapsed watch time
+const SAVE_INTERVAL_MS = 10_000;
+
 export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps) {
   const [loading, setLoading] = useState(true);
   const [isCinemaMode, setIsCinemaMode] = useState(false);
+
+  // Progress / resume state
+  const [savedProgress, setSavedProgress] = useState<VideoProgress | null>(null);
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [resumeFrom, setResumeFrom] = useState(0);
+  const [progressLoading, setProgressLoading] = useState(true);
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // Track elapsed seconds since playback started
+  const elapsedRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startPositionRef = useRef(0);
+
+  // Fetch saved progress on mount
+  useEffect(() => {
+    let cancelled = false;
+    setProgressLoading(true);
+
+    api.getProgress(video.id)
+      .then((res) => {
+        if (cancelled) return;
+        const p = res.progress;
+        if (p && p.position_seconds >= MIN_RESUME_POSITION) {
+          setSavedProgress(p);
+          setShowResumeModal(true);
+        } else {
+          setSavedProgress(null);
+          setShowResumeModal(false);
+        }
+      })
+      .catch(() => {
+        // Ignore errors — just start from beginning
+      })
+      .finally(() => {
+        if (!cancelled) setProgressLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [video.id]);
+
+  // Start tracking elapsed time once iframe loads (after resume decision)
+  const startTracking = useCallback((fromSeconds: number) => {
+    startPositionRef.current = fromSeconds;
+    elapsedRef.current = fromSeconds;
+
+    // Increment elapsed every second
+    timerRef.current = setInterval(() => {
+      elapsedRef.current += 1;
+    }, 1000);
+
+    // Save progress every SAVE_INTERVAL_MS
+    saveTimerRef.current = setInterval(() => {
+      const pos = elapsedRef.current;
+      if (pos >= MIN_RESUME_POSITION) {
+        api.saveProgress(video.id, pos).catch(() => { /* silent */ });
+      }
+    }, SAVE_INTERVAL_MS);
+  }, [video.id]);
+
+  const stopTracking = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (saveTimerRef.current) {
+      clearInterval(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+  }, []);
+
+  // Save progress on unmount
+  useEffect(() => {
+    return () => {
+      stopTracking();
+      const pos = elapsedRef.current;
+      if (pos >= MIN_RESUME_POSITION) {
+        api.saveProgress(video.id, pos).catch(() => { /* silent */ });
+      }
+    };
+  }, [video.id, stopTracking]);
+
+  // Отслеживаем выход из нативного fullscreen (например, через кнопку назад)
   useEffect(() => {
     if (window.Telegram?.WebApp) {
       window.Telegram.WebApp.expand();
     }
   }, []);
 
-  // Отслеживаем выход из нативного fullscreen (например, через кнопку назад)
   useEffect(() => {
     const handleFsChange = () => {
       const doc = document as ExtendedDocument;
       const isNativeFsActive = !!(document.fullscreenElement || doc.webkitFullscreenElement);
       if (!isNativeFsActive && isCinemaMode) {
-        // нативный fullscreen закрылся, но кино-режим (скрытые панели) оставляем
+        // нативный fullscreen закрылся, кино-режим (скрытые панели) оставляем
       }
     };
     document.addEventListener('fullscreenchange', handleFsChange);
@@ -59,16 +156,10 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
   }, [isCinemaMode]);
 
   const enterCinemaMode = async () => {
-    // Уровень 1: Telegram WebApp requestFullscreen (Bot API 7.7+)
     if (window.Telegram?.WebApp?.requestFullscreen) {
-      try {
-        window.Telegram.WebApp.requestFullscreen();
-      } catch {
-        // не поддерживается в данной версии
-      }
+      try { window.Telegram.WebApp.requestFullscreen(); } catch { /* не поддерживается */ }
     }
 
-    // Уровень 2: Нативный Fullscreen API на обёртке видео
     const el = wrapperRef.current as ExtendedHTMLElement | null;
     if (el && !document.fullscreenElement) {
       try {
@@ -77,27 +168,18 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
         } else if (el.webkitRequestFullscreen) {
           el.webkitRequestFullscreen();
         }
-      } catch {
-        // WebView не поддерживает Fullscreen API
-      }
+      } catch { /* WebView не поддерживает Fullscreen API */ }
     }
 
-    // Уровень 3: Блокировка ориентации в landscape
     try {
       const orientation = screen.orientation as ExtendedScreenOrientation;
-      if (orientation?.lock) {
-        await orientation.lock('landscape');
-      }
-    } catch {
-      // Screen Orientation API недоступен
-    }
+      if (orientation?.lock) { await orientation.lock('landscape'); }
+    } catch { /* Screen Orientation API недоступен */ }
 
-    // Уровень 4 (всегда): скрываем наши панели — кино-режим
     setIsCinemaMode(true);
   };
 
   const exitCinemaMode = async () => {
-    // Выходим из нативного fullscreen если активен
     const doc = document as ExtendedDocument;
     if (document.fullscreenElement) {
       try { await document.exitFullscreen(); } catch { /* игнорируем */ }
@@ -105,32 +187,27 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
       try { doc.webkitExitFullscreen(); } catch { /* игнорируем */ }
     }
 
-    // Выходим из Telegram fullscreen (Bot API 7.7+)
     if (window.Telegram?.WebApp?.exitFullscreen) {
       try { window.Telegram.WebApp.exitFullscreen(); } catch { /* игнорируем */ }
     }
 
-    // Снимаем блокировку ориентации
     try {
       const orientation = screen.orientation as ExtendedScreenOrientation;
-      if (orientation?.unlock) {
-        orientation.unlock();
-      }
+      if (orientation?.unlock) { orientation.unlock(); }
     } catch { /* игнорируем */ }
 
     setIsCinemaMode(false);
   };
 
-  if (!video) {
-    return null;
-  }
+  if (!video) return null;
 
-  const getEmbedUrl = (): string | null => {
+  const getEmbedUrl = (startSeconds = 0): string | null => {
+    const t = Math.floor(startSeconds);
     switch (video.platform) {
       case 'youtube':
-        return `https://www.youtube-nocookie.com/embed/${video.external_id}?autoplay=1`;
+        return `https://www.youtube-nocookie.com/embed/${video.external_id}?autoplay=1${t > 0 ? `&start=${t}` : ''}`;
       case 'rutube':
-        return `https://rutube.ru/play/embed/${video.external_id}`;
+        return `https://rutube.ru/play/embed/${video.external_id}${t > 0 ? `?t=${t}` : ''}`;
       case 'vk': {
         const [oid, vid] = video.external_id.split('_');
         if (!oid || !vid) return null;
@@ -141,8 +218,44 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
     }
   };
 
-  const embedUrl = getEmbedUrl();
+  const handleResumeYes = () => {
+    const pos = savedProgress?.position_seconds ?? 0;
+    setResumeFrom(pos);
+    setShowResumeModal(false);
+    startTracking(pos);
+  };
+
+  const handleResumeNo = () => {
+    setResumeFrom(0);
+    setShowResumeModal(false);
+    startTracking(0);
+    // Reset progress to 0 on server
+    api.saveProgress(video.id, 0).catch(() => { /* silent */ });
+  };
+
+  const handleIframeLoad = () => {
+    setLoading(false);
+    // Start tracking only if resume modal is not shown (user already made a decision)
+    if (!showResumeModal && timerRef.current === null) {
+      startTracking(resumeFrom);
+    }
+  };
+
+  const embedUrl = getEmbedUrl(resumeFrom);
   const isWatched = Boolean(video.is_watched);
+
+  // Show loading spinner while fetching saved progress
+  if (progressLoading) {
+    return (
+      <div className="player-overlay">
+        <div className="player-container">
+          <div className="player-loading">
+            <div className="spinner" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -153,6 +266,27 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
         className={`player-container${isCinemaMode ? ' player-container--cinema' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Resume modal */}
+        {showResumeModal && savedProgress && (
+          <div className="resume-modal-overlay" onClick={(e) => e.stopPropagation()}>
+            <div className="resume-modal">
+              <div className="resume-modal__icon">▶️</div>
+              <p className="resume-modal__text">
+                Продолжить просмотр с{' '}
+                <strong>{formatTime(savedProgress.position_seconds)}</strong>?
+              </p>
+              <div className="resume-modal__actions">
+                <button className="resume-modal__btn resume-modal__btn--primary" onClick={handleResumeYes}>
+                  Продолжить
+                </button>
+                <button className="resume-modal__btn resume-modal__btn--secondary" onClick={handleResumeNo}>
+                  С начала
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Шапка скрывается в кино-режиме */}
         {!isCinemaMode && (
           <div className="player-header">
@@ -177,23 +311,25 @@ export function Player({ video, onClose, onDelete, onMarkWatched }: PlayerProps)
 
         {/* Зона видео */}
         <div className="player-video-wrapper" ref={wrapperRef}>
-          {loading && (
+          {loading && !showResumeModal && (
             <div className="player-loading">
               <div className="spinner" />
             </div>
           )}
-          {embedUrl ? (
-            <iframe
-              ref={iframeRef}
-              src={embedUrl}
-              title={video.title}
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-              allowFullScreen
-              onLoad={() => setLoading(false)}
-            />
-          ) : (
-            <div className="player-error">Не удалось загрузить видео</div>
+          {!showResumeModal && (
+            embedUrl ? (
+              <iframe
+                ref={iframeRef}
+                src={embedUrl}
+                title={video.title}
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                allowFullScreen
+                onLoad={handleIframeLoad}
+              />
+            ) : (
+              <div className="player-error">Не удалось загрузить видео</div>
+            )
           )}
 
           {/* Плавающая кнопка выхода из кино-режима */}
