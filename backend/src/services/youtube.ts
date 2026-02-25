@@ -1,108 +1,119 @@
 import type { YouTubeVideoInfo } from '../types/video.js';
 
-interface InvidiousStream {
-  url?: string;
-  type?: string;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface InvidiousThumbnail {
-  url?: string;
+interface OembedResponse {
+  title?: string;
+  author_name?: string;
+  thumbnail_url?: string;
 }
 
 interface InvidiousVideoData {
   title?: string;
   author?: string;
   lengthSeconds?: number;
-  formatStreams?: InvidiousStream[];
-  adaptiveFormats?: InvidiousStream[];
-  videoThumbnails?: InvidiousThumbnail[];
 }
 
-// Invidious instances for YouTube bypass
-const INVIDIOUS_INSTANCES: string[] = [
-  'https://vid.puffyan.us',
-  'https://y.com.sb',
-  'https://iv.datura.network',
-  'https://iv.nboeck.de',
-  'https://iv.melmac.space'
-];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown error';
+/** Standard YouTube thumbnail URL — img.youtube.com is always reachable. */
+function thumbnailUrl(videoId: string): string {
+  // maxresdefault (1280×720) exists for most modern videos;
+  // hqdefault (480×360) is the guaranteed fallback.
+  return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
 }
 
-// Fetch with timeout
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit = {},
-  timeout = 10000
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+// ─── Method 1: YouTube oEmbed (official, no API key) ─────────────────────────
+
+async function tryOembed(videoId: string): Promise<YouTubeVideoInfo | null> {
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`;
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000)
     });
 
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
+    if (!res.ok) {
+      console.warn(`[YouTube oEmbed] HTTP ${res.status} for ${videoId}`);
+      return null;
+    }
+
+    const data = (await res.json()) as OembedResponse;
+    const title = data.title?.trim();
+    if (!title) return null;
+
+    return {
+      title,
+      channelName: data.author_name?.trim() ?? 'YouTube',
+      thumbnailUrl: thumbnailUrl(videoId),
+      duration: null,
+      instance: 'oembed'
+    };
+  } catch (err) {
+    console.warn(`[YouTube oEmbed] error for ${videoId}:`, err instanceof Error ? err.message : err);
+    return null;
   }
 }
 
-// Get video info from Invidious
-export async function getYouTubeInfo(videoId: string): Promise<YouTubeVideoInfo> {
+// ─── Method 2: Invidious (optional, for duration) ────────────────────────────
+// Invidious instances go down often — used only as a bonus source of duration data.
+
+const INVIDIOUS_INSTANCES = [
+  'https://invidious.privacydev.net',
+  'https://yt.cdaut.de',
+  'https://invidious.nerdvpn.de',
+  'https://iv.ergy.fr',
+  'https://invidious.fdn.fr'
+];
+
+async function tryInvidiousDuration(videoId: string): Promise<number | null> {
   for (const instance of INVIDIOUS_INSTANCES) {
     try {
-      const response = await fetchWithTimeout(`${instance}/api/v1/videos/${videoId}`, {}, 5000);
+      const res = await fetch(`${instance}/api/v1/videos/${videoId}`, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(5000)
+      });
 
-      if (!response.ok) {
-        continue;
+      if (!res.ok) continue;
+
+      const data = (await res.json()) as InvidiousVideoData;
+      if (typeof data.lengthSeconds === 'number' && data.lengthSeconds > 0) {
+        return data.lengthSeconds;
       }
-
-      const data = (await response.json()) as InvidiousVideoData;
-
-      // Find best quality stream
-      const stream =
-        data.formatStreams?.[0] ??
-        data.adaptiveFormats?.find((format: InvidiousStream) =>
-          format.type?.includes('video')
-        );
-
-      return {
-        title: data.title ?? 'YouTube Video',
-        channelName: data.author ?? 'Unknown',
-        thumbnailUrl:
-          data.videoThumbnails?.[0]?.url ?? `https://img.youtube.com/vi/${videoId}/0.jpg`,
-        duration: data.lengthSeconds ?? null,
-        streamUrl: stream?.url,
-        instance
-      };
-    } catch (error) {
-      console.log(`Instance ${instance} failed:`, getErrorMessage(error));
+    } catch {
+      // Instance unavailable — try next
     }
   }
-
-  throw new Error('No working Invidious instance found');
+  return null;
 }
 
-// Get embed URL (for iframe fallback)
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function getYouTubeInfo(videoId: string): Promise<YouTubeVideoInfo> {
+  // oEmbed is the primary (and reliable) source
+  const oembedResult = await tryOembed(videoId);
+
+  if (oembedResult) {
+    // Try to enrich with duration from Invidious (fire-and-forget, non-blocking)
+    const duration = await tryInvidiousDuration(videoId);
+    return { ...oembedResult, duration };
+  }
+
+  // Hard fallback — at least embed URL and thumbnail will work
+  console.warn(`[YouTube] oEmbed failed for ${videoId}, using generic fallback`);
+  return {
+    title: 'YouTube Video',
+    channelName: 'YouTube',
+    thumbnailUrl: thumbnailUrl(videoId),
+    duration: null,
+    instance: 'fallback'
+  };
+}
+
 export function getYouTubeEmbedUrl(videoId: string): string {
   return `https://www.youtube-nocookie.com/embed/${videoId}`;
 }
 
-// Get direct video URL (for custom player)
-export async function getYouTubeStreamUrl(videoId: string): Promise<string | undefined> {
-  const info = await getYouTubeInfo(videoId);
-  return info.streamUrl;
-}
-
-export default {
-  getYouTubeInfo,
-  getYouTubeEmbedUrl,
-  getYouTubeStreamUrl
-};
+export default { getYouTubeInfo, getYouTubeEmbedUrl };
