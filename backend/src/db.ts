@@ -68,6 +68,22 @@ function initTables(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_progress_user_video ON video_progress(user_id, video_id)');
 }
 
+/** One-time fix: replace HTML-encoded & (&amp;) in thumbnail URLs saved before entity decoding was applied */
+function fixAmpersandsInThumbnails(): void {
+  const result = db
+    .prepare(
+      `UPDATE videos
+       SET thumbnail_url = REPLACE(thumbnail_url, '&amp;', '&')
+       WHERE thumbnail_url LIKE '%&amp;%'`
+    )
+    .run();
+
+  if (result.changes > 0) {
+    console.log(`[db] Fixed &amp; in thumbnail_url for ${result.changes} row(s)`);
+  }
+}
+
 initTables();
+fixAmpersandsInThumbnails();
 
 export default db;

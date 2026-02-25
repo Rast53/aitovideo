@@ -184,7 +184,7 @@ async function tryMobileScraping(ownerId: string, videoId: string): Promise<VkVi
     return {
       title: decodeHtmlEntities(title),
       channelName: 'VK Video',
-      thumbnailUrl: imageMatch?.[1] ?? null,
+      thumbnailUrl: imageMatch?.[1] ? decodeHtmlEntities(imageMatch[1]) : null,
       duration: null,
       embedUrl: `https://vk.com/video_ext.php?oid=${ownerId}&id=${videoId}&hd=2`
     };
@@ -250,7 +250,7 @@ async function tryGooglebotScraping(ownerId: string, videoId: string): Promise<V
       html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/) ??
       html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/);
 
-    const thumbnailUrl = imageMatch?.[1] ?? null;
+    const thumbnailUrl = imageMatch?.[1] ? decodeHtmlEntities(imageMatch[1]) : null;
     console.log(`[VK googlebot] thumbnailUrl=${thumbnailUrl ?? 'NOT FOUND'}`);
 
     return {
@@ -310,7 +310,7 @@ async function tryHtmlScraping(ownerId: string, videoId: string): Promise<VkVide
     return {
       title,
       channelName: 'VK Video',
-      thumbnailUrl: imageMatch?.[1] ?? null,
+      thumbnailUrl: imageMatch?.[1] ? decodeHtmlEntities(imageMatch[1]) : null,
       duration: null,
       embedUrl: `https://vk.com/video_ext.php?oid=${ownerId}&id=${videoId}&hd=2`
     };
