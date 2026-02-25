@@ -167,7 +167,15 @@ async function tryMobileScraping(ownerId: string, videoId: string): Promise<VkVi
       html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/);
 
     const title = titleMatch?.[1]?.trim();
-    if (!title || title === 'VK' || title.toLowerCase().includes('vkontakte')) return null;
+    const isGeneric =
+      !title ||
+      title === 'VK' ||
+      title.toLowerCase().includes('vkontakte') ||
+      title.includes('ВКонтакте') ||
+      title.includes('Вконтакте') ||
+      title.startsWith('VK |') ||
+      title.startsWith('ВК |');
+    if (isGeneric) return null;
 
     return {
       title: decodeHtmlEntities(title),
@@ -182,7 +190,65 @@ async function tryMobileScraping(ownerId: string, videoId: string): Promise<VkVi
   }
 }
 
-// ─── Method 4: HTML scraping — desktop (last resort) ─────────────────────────
+// ─── Method 4: HTML scraping — Googlebot UA (VK often serves full page to bots)
+
+async function tryGooglebotScraping(ownerId: string, videoId: string): Promise<VkVideoInfo | null> {
+  const videoUrl = `https://vk.com/video${ownerId}_${videoId}`;
+
+  try {
+    const res = await fetch(videoUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'ru-RU,ru;q=0.9'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    console.log(`[VK googlebot] status=${res.status}`);
+    if (!res.ok) return null;
+
+    const html = await res.text();
+    const title = extractOgTitle(html);
+    if (!title) return null;
+
+    const imageMatch =
+      html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/) ??
+      html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/);
+
+    return {
+      title,
+      channelName: 'VK Video',
+      thumbnailUrl: imageMatch?.[1] ?? null,
+      duration: null,
+      embedUrl: `https://vk.com/video_ext.php?oid=${ownerId}&id=${videoId}&hd=2`
+    };
+  } catch (err) {
+    console.warn('[VK googlebot] error:', err);
+    return null;
+  }
+}
+
+function extractOgTitle(html: string): string | null {
+  const raw =
+    html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/)?.[1] ??
+    html.match(/<meta\s+content="([^"]+)"\s+property="og:title"/)?.[1];
+
+  const title = raw?.trim();
+  if (!title) return null;
+
+  const isGeneric =
+    title === 'VK' ||
+    title.toLowerCase().includes('vkontakte') ||
+    title.includes('ВКонтакте') ||
+    title.includes('Вконтакте') ||
+    title.startsWith('VK |') ||
+    title.startsWith('ВК |');
+
+  return isGeneric ? null : decodeHtmlEntities(title);
+}
+
+// ─── Method 5: HTML scraping — desktop (last resort) ─────────────────────────
 
 async function tryHtmlScraping(ownerId: string, videoId: string): Promise<VkVideoInfo | null> {
   const videoUrl = `https://vk.com/video${ownerId}_${videoId}`;
@@ -197,19 +263,15 @@ async function tryHtmlScraping(ownerId: string, videoId: string): Promise<VkVide
     if (!res.ok) return null;
 
     const html = await res.text();
+    const title = extractOgTitle(html);
+    if (!title) return null;
 
-    const titleMatch =
-      html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/) ??
-      html.match(/<meta\s+content="([^"]+)"\s+property="og:title"/);
     const imageMatch =
       html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/) ??
       html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/);
 
-    const title = titleMatch?.[1]?.trim();
-    if (!title) return null;
-
     return {
-      title: decodeHtmlEntities(title),
+      title,
       channelName: 'VK Video',
       thumbnailUrl: imageMatch?.[1] ?? null,
       duration: null,
@@ -247,7 +309,14 @@ export async function getVkVideoInfo(ownerId: string, videoId: string): Promise<
     return mobileResult;
   }
 
-  // 4. Desktop HTML scraping
+  // 4. Googlebot scraping
+  const googlebotResult = await tryGooglebotScraping(ownerId, videoId);
+  if (googlebotResult) {
+    console.log(`[VK] ✓ Googlebot scraping: "${googlebotResult.title}"`);
+    return googlebotResult;
+  }
+
+  // 5. Desktop HTML scraping
   const htmlResult = await tryHtmlScraping(ownerId, videoId);
   if (htmlResult) {
     console.log(`[VK] ✓ Desktop scraping: "${htmlResult.title}"`);
@@ -256,8 +325,9 @@ export async function getVkVideoInfo(ownerId: string, videoId: string): Promise<
 
   console.warn(
     `[VK] ✗ All methods failed for ${ownerId}_${videoId}.\n` +
-    `  → Создайте VK-приложение на vk.com/editapp?act=create\n` +
-    `  → Добавьте Сервисный ключ как VK_SERVICE_TOKEN в env`
+    `  → API error 1051: токен VK ID не подходит, нужен классический.\n` +
+    `  → Создайте Standalone-приложение на vk.com/editapp?act=create\n` +
+    `  → Настройки → Сервисный ключ доступа → VK_SERVICE_TOKEN`
   );
   return {
     title: 'VK Video',
