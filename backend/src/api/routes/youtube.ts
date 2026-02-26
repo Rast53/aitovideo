@@ -69,8 +69,12 @@ async function getStreamUrl(videoId: string, quality: YoutubeQuality): Promise<s
   const streamUrls = stdout.trim().split('\n').map((line) => line.trim()).filter(Boolean);
   if (quality === '1080' && streamUrls.length > 1) {
     console.warn(
-      `[YouTube proxy] quality=1080 returned multiple stream URLs (${streamUrls.length}), using first URL`
+      `[YouTube proxy] quality=1080 returned multiple stream URLs (${streamUrls.length}), falling back to 720p progressive stream`
     );
+
+    const fallbackUrl = await getStreamUrl(videoId, '720');
+    urlCache.set(cacheKey, { url: fallbackUrl, expires: Date.now() + CACHE_TTL_MS });
+    return fallbackUrl;
   }
 
   const url = streamUrls[0] ?? '';
