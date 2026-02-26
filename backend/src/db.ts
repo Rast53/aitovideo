@@ -42,8 +42,10 @@ function initTables(): void {
       thumbnail_url TEXT,
       duration INTEGER,
       is_watched BOOLEAN DEFAULT FALSE,
+      parent_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (parent_id) REFERENCES videos(id) ON DELETE SET NULL,
       UNIQUE(user_id, platform, external_id)
     )
   `);

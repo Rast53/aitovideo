@@ -11,6 +11,7 @@ export interface Video {
   thumbnail_url: string | null;
   duration: number | null;
   is_watched: number | boolean;
+  parent_id: number | null;
   created_at: string;
 }
 

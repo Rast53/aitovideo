@@ -132,7 +132,7 @@ router.post(
 
       // If YouTube, find alternatives in background
       if (parsed.platform === 'youtube') {
-        void findAlternatives(videoInfo.title, user.id);
+        void findAlternatives(videoInfo.title, videoInfo.channelName, user.id, video.id);
       }
 
       res.status(201).json({ video });
@@ -143,12 +143,12 @@ router.post(
   }
 );
 
-async function findAlternatives(query: string, userId: number) {
+async function findAlternatives(query: string, originalChannel: string, userId: number, parentId: number) {
   try {
     // Search both platforms
     const [vkAlts, rutubeAlts] = await Promise.all([
-      vk.searchVkVideos(query, 2),
-      rutube.searchRutubeVideos(query, 2)
+      vk.searchVkVideos(query, 3),
+      rutube.searchRutubeVideos(query, 3)
     ]);
 
     const allAlts = [
@@ -156,8 +156,28 @@ async function findAlternatives(query: string, userId: number) {
       ...rutubeAlts.map((v) => ({ ...v, platform: 'rutube' as const }))
     ];
 
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^a-zа-я0-9]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+
+    const targetWords = normalize(originalChannel);
+
     for (const alt of allAlts) {
       if (!alt.externalId) {
+        continue;
+      }
+
+      // Fuzzy matching channel names
+      const candidateWords = normalize(alt.channelName || '');
+      const isMatch =
+        targetWords.length === 0 ||
+        candidateWords.length === 0 ||
+        targetWords.some((w) => candidateWords.includes(w));
+
+      if (!isMatch) {
         continue;
       }
 
@@ -174,10 +194,11 @@ async function findAlternatives(query: string, userId: number) {
           alt.platform === 'vk'
             ? `https://vk.com/video${alt.externalId}`
             : `https://rutube.ru/video/${alt.externalId}/`,
-        title: `[ALT] ${alt.title}`,
+        title: alt.title,
         channelName: alt.channelName,
         thumbnailUrl: alt.thumbnailUrl,
-        duration: alt.duration
+        duration: alt.duration,
+        parentId
       });
     }
   } catch (err) {

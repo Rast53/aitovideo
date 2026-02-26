@@ -134,3 +134,38 @@
   color: #4caf50;
   background: rgba(76, 175, 80, 0.12);
 }
+
+.video-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.video-alternatives {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.alt-label {
+  font-size: 10px;
+  color: var(--tg-theme-hint-color);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.alt-platform-icon {
+  background: var(--tg-theme-secondary-bg-color);
+  border: 1px solid var(--tg-theme-hint-color);
+  border-radius: 4px;
+  padding: 2px 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: transform 0.1s;
+}
+
+.alt-platform-icon:hover {
+  transform: scale(1.1);
+  border-color: var(--tg-theme-button-color);
+}

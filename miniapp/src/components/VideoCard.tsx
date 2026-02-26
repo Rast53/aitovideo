@@ -4,17 +4,12 @@ import './VideoCard.css';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
 
-/**
- * For VK videos the CDN blocks direct browser requests.
- * Route the thumbnail through our backend proxy instead.
- */
 function getThumbnailSrc(video: Video): string | null {
   if (!video.thumbnail_url) return null;
   if (video.platform === 'vk') {
     return `${API_URL}/api/proxy/thumbnail?url=${encodeURIComponent(video.thumbnail_url)}`;
   }
   if (video.platform === 'youtube') {
-    // If the thumbnail URL is present, try to extract video ID.
     const match = video.thumbnail_url.match(/\/vi\/([^\/]+)\//);
     const videoId = match ? match[1] : video.external_id;
     if (videoId) {
@@ -25,9 +20,9 @@ function getThumbnailSrc(video: Video): string | null {
 }
 
 const platformIcons: Record<VideoPlatform, string> = {
-  youtube: '🔴', // YouTube brand color
+  youtube: '🔴',
   rutube: '▶️',
-  vk: '🔵'      // VK brand color
+  vk: '🔵'
 };
 
 const platformEmojis: Record<VideoPlatform, string> = {
@@ -45,17 +40,18 @@ function formatDuration(seconds: number | null): string {
 
 interface VideoCardProps {
   video: Video;
+  alternatives?: Video[];
   onClick?: (video: Video) => void;
   onDelete?: (id: number) => void;
   onMarkWatched?: (id: number, isWatched: boolean) => void;
 }
 
-export function VideoCard({ video, onClick, onDelete, onMarkWatched }: VideoCardProps) {
+export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkWatched }: VideoCardProps) {
   const isWatched = Boolean(video.is_watched);
 
   const handleDelete = (event: MouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation();
-    if (window.confirm('Удалить видео из очереди?')) {
+    if (window.confirm('Удалить видео и все его альтернативы?')) {
       onDelete?.(video.id);
     }
   };
@@ -63,6 +59,11 @@ export function VideoCard({ video, onClick, onDelete, onMarkWatched }: VideoCard
   const handleWatched = (event: MouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation();
     onMarkWatched?.(video.id, !isWatched);
+  };
+
+  const handleAltClick = (event: MouseEvent, altVideo: Video): void => {
+    event.stopPropagation();
+    onClick?.(altVideo);
   };
 
   const thumbnailSrc = getThumbnailSrc(video);
@@ -83,9 +84,9 @@ export function VideoCard({ video, onClick, onDelete, onMarkWatched }: VideoCard
             }}
           />
         ) : null}
-          <div className="video-thumbnail-placeholder" style={{ display: thumbnailSrc ? 'none' : 'flex' }}>
-            {platformEmojis[video.platform] ?? '📹'}
-          </div>
+        <div className="video-thumbnail-placeholder" style={{ display: thumbnailSrc ? 'none' : 'flex' }}>
+          {platformEmojis[video.platform] ?? '📹'}
+        </div>
         {video.duration !== null && video.duration > 0 && (
           <span className="video-duration">{formatDuration(video.duration)}</span>
         )}
@@ -94,25 +95,35 @@ export function VideoCard({ video, onClick, onDelete, onMarkWatched }: VideoCard
 
       <div className="video-info">
         <h3 className="video-title">{video.title}</h3>
-        <p className="video-channel">
-          {platformIcons[video.platform]} {video.channel_name ?? 'Unknown'}
-        </p>
+        <div className="video-meta">
+          <p className="video-channel">
+            {platformIcons[video.platform]} {video.channel_name ?? 'Unknown'}
+          </p>
+          
+          {alternatives.length > 0 && (
+            <div className="video-alternatives">
+              <span className="alt-label">Также на:</span>
+              {alternatives.map(alt => (
+                <button 
+                  key={alt.id} 
+                  className="alt-platform-icon" 
+                  onClick={(e) => handleAltClick(e, alt)}
+                  title={alt.channel_name || alt.platform}
+                >
+                  {platformIcons[alt.platform]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="video-card-actions">
-        <button
-          className="video-delete-btn"
-          onClick={handleDelete}
-          title="Удалить"
-          aria-label="Удалить"
-        >
-          🗑️
-        </button>
+        <button className="video-delete-btn" onClick={handleDelete} title="Удалить">🗑️</button>
         <button
           className={`video-watched-btn${isWatched ? ' video-watched-btn--active' : ''}`}
           onClick={handleWatched}
           title={isWatched ? 'Снять отметку' : 'Отметить просмотренным'}
-          aria-label={isWatched ? 'Снять отметку' : 'Отметить просмотренным'}
         >
           ✓
         </button>

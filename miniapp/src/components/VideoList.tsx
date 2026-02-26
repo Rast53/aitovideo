@@ -36,17 +36,24 @@ export function VideoList({
     );
   }
 
+  // Group videos: find roots and their alternatives
+  const rootVideos = videos.filter((v) => !v.parent_id);
+  
   return (
     <div className="video-list">
-      {videos.map((video) => (
-        <VideoCard
-          key={video.id}
-          video={video}
-          onClick={onVideoClick}
-          onDelete={onDelete}
-          onMarkWatched={onMarkWatched}
-        />
-      ))}
+      {rootVideos.map((video) => {
+        const alternatives = videos.filter((alt) => alt.parent_id === video.id);
+        return (
+          <VideoCard
+            key={video.id}
+            video={video}
+            alternatives={alternatives}
+            onClick={onVideoClick}
+            onDelete={onDelete}
+            onMarkWatched={onMarkWatched}
+          />
+        );
+      })}
     </div>
   );
 }

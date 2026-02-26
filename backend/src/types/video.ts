@@ -11,6 +11,7 @@ export interface Video {
   thumbnail_url: string | null;
   duration: number | null;
   is_watched: number | boolean;
+  parent_id: number | null;
   created_at: string;
 }
 
@@ -23,6 +24,7 @@ export interface CreateVideoInput {
   channelName?: string | null;
   thumbnailUrl?: string | null;
   duration?: number | null;
+  parentId?: number | null;
 }
 
 export interface ParsedVideoUrl {

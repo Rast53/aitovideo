@@ -15,16 +15,18 @@ export const VideoModel = {
     title,
     channelName = null,
     thumbnailUrl = null,
-    duration = null
+    duration = null,
+    parentId = null
   }: CreateVideoInput): Video {
     const stmt = db.prepare(`
-      INSERT INTO videos (user_id, platform, external_id, url, title, channel_name, thumbnail_url, duration)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO videos (user_id, platform, external_id, url, title, channel_name, thumbnail_url, duration, parent_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, platform, external_id) DO UPDATE SET
         title = excluded.title,
         channel_name = excluded.channel_name,
         thumbnail_url = excluded.thumbnail_url,
-        duration = excluded.duration
+        duration = excluded.duration,
+        parent_id = COALESCE(excluded.parent_id, videos.parent_id)
       RETURNING *
     `);
 
@@ -36,7 +38,8 @@ export const VideoModel = {
       title,
       channelName,
       thumbnailUrl,
-      duration
+      duration,
+      parentId
     ) as Video;
   },
 
