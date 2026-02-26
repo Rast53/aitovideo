@@ -130,6 +130,11 @@ router.post(
         duration: videoInfo.duration
       });
 
+      // If YouTube, find alternatives in background
+      if (parsed.platform === 'youtube') {
+        void findAlternatives(videoInfo.title, user.id);
+      }
+
       res.status(201).json({ video });
     } catch (error) {
       console.error('Add video error:', getErrorMessage(error));
@@ -137,6 +142,44 @@ router.post(
     }
   }
 );
+
+async function findAlternatives(query: string, userId: number) {
+  try {
+    // Search both platforms
+    const [vkAlts, rutubeAlts] = await Promise.all([
+      vk.searchVkVideos(query, 2),
+      rutube.searchRutubeVideos(query, 2)
+    ]);
+
+    const allAlts = [
+      ...vkAlts.map((v) => ({ ...v, platform: 'vk' as const })),
+      ...rutubeAlts.map((v) => ({ ...v, platform: 'rutube' as const }))
+    ];
+
+    for (const alt of allAlts) {
+      // Skip if already exists
+      if (VideoModel.exists(userId, alt.platform, alt.externalId)) {
+        continue;
+      }
+
+      VideoModel.create({
+        userId,
+        platform: alt.platform,
+        externalId: alt.externalId,
+        url:
+          alt.platform === 'vk'
+            ? `https://vk.com/video${alt.externalId}`
+            : `https://rutube.ru/video/${alt.externalId}/`,
+        title: `[ALT] ${alt.title}`,
+        channelName: alt.channelName,
+        thumbnailUrl: alt.thumbnailUrl,
+        duration: alt.duration
+      });
+    }
+  } catch (err) {
+    console.warn('[AltSearch] Background search failed:', err);
+  }
+}
 
 // Delete video
 router.delete(

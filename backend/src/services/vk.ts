@@ -244,8 +244,43 @@ export async function getVkVideoInfo(ownerId: string, videoId: string): Promise<
   };
 }
 
+export async function searchVkVideos(query: string, limit = 3): Promise<VkVideoInfo[]> {
+  const token = process.env.VK_SERVICE_TOKEN;
+  if (!token) {
+    console.warn('[VK Search] No service token — skipping API search');
+    return [];
+  }
+
+  const url =
+    `https://api.vk.com/method/video.search` +
+    `?q=${encodeURIComponent(query)}` +
+    `&access_token=${token}` +
+    `&v=5.199` +
+    `&count=${limit}` +
+    `&extended=0`;
+
+  try {
+    const res = await fetch(url, { headers: { ...DESKTOP_HEADERS, Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    const data = (await res.json()) as VkApiResponse;
+
+    if (data.error || !data.response?.items) return [];
+
+    return data.response.items.map(item => ({
+      title: decodeHtmlEntities(item.title ?? 'VK Video'),
+      channelName: 'VK Video',
+      thumbnailUrl: bestThumbnail(item),
+      duration: item.duration ?? null,
+      embedUrl: `https://vk.com/video_ext.php?oid=${item.owner_id}&id=${item.id}&hd=2`,
+      externalId: `${item.owner_id}_${item.id}`
+    }));
+  } catch (err) {
+    console.warn('[VK Search] Search failed:', err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
 export function getVkEmbedUrl(ownerId: string, videoId: string): string {
   return `https://vk.com/video_ext.php?oid=${ownerId}&id=${videoId}&hd=2`;
 }
 
-export default { getVkVideoInfo, getVkEmbedUrl };
+export default { getVkVideoInfo, getVkEmbedUrl, searchVkVideos };
