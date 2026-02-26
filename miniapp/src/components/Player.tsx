@@ -87,6 +87,7 @@ function openExternal(url: string): void {
 
 const MIN_RESUME_SECONDS = 10;
 const SAVE_INTERVAL_MS = 10_000;
+const BACK_BUTTON_HIDE_MS = 3_000;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,7 @@ export function Player({ video, onClose }: PlayerProps) {
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [startFrom, setStartFrom] = useState(0);
   const [playbackReady, setPlaybackReady] = useState(false);
+  const [isBackButtonVisible, setIsBackButtonVisible] = useState(true);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -165,6 +167,18 @@ export function Player({ video, onClose }: PlayerProps) {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fully hide back button after short delay (remove from DOM, no blocking layer)
+  useEffect(() => {
+    setIsBackButtonVisible(true);
+    const hideTimer = window.setTimeout(() => {
+      setIsBackButtonVisible(false);
+    }, BACK_BUTTON_HIDE_MS);
+
+    return () => {
+      window.clearTimeout(hideTimer);
+    };
+  }, [video.id]);
 
   // ── Fetch saved progress on mount ─────────────────────────────────────────
   useEffect(() => {
@@ -245,15 +259,17 @@ export function Player({ video, onClose }: PlayerProps) {
       <div className="player-container" onClick={(e) => e.stopPropagation()} ref={wrapperRef}>
 
         {/* ── Back button ──────────────────────────────────────────────── */}
-        <button
-          className="player-back-btn"
-          onClick={onClose}
-          aria-label="Назад к списку"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-          </svg>
-        </button>
+        {isBackButtonVisible && (
+          <button
+            className="player-back-btn"
+            onClick={onClose}
+            aria-label="Назад к списку"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+            </svg>
+          </button>
+        )}
 
         {/* ── Video title overlay ───────────────────────────────────────── */}
         <div className="player-title-overlay">

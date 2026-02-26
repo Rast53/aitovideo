@@ -41,19 +41,11 @@
   border-radius: 50%;
   color: #fff;
   z-index: 20;
-  transition: background 0.2s, opacity 0.2s;
-  animation: fade-out-btn 3s ease forwards;
+  transition: background 0.2s;
 }
 
 .player-back-btn:active {
   background: rgba(0, 0, 0, 0.8);
-}
-
-.player-back-btn:hover,
-.player-back-btn:active,
-.player-back-btn:focus {
-  opacity: 1;
-  animation: none;
 }
 
 @keyframes fade-out-btn {
