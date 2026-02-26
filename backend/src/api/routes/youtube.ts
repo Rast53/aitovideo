@@ -21,9 +21,9 @@ const SUPPORTED_QUALITIES = ['360', '720', '1080'] as const;
 type YoutubeQuality = (typeof SUPPORTED_QUALITIES)[number];
 const DEFAULT_QUALITY: YoutubeQuality = '720';
 const QUALITY_FORMAT_SELECTOR: Record<YoutubeQuality, string> = {
-  '360': '18/best[height<=360]',
-  '720': '22/best[height<=720]',
-  '1080': '22/best[height<=1080]' 
+  '360': '"18/best[height<=360]"',
+  '720': '"22/best[height<=720]"',
+  '1080': '"22/best[height<=1080]"' 
 };
 
 function isYoutubeQuality(value: string): value is YoutubeQuality {
