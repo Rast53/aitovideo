@@ -1,0 +1,80 @@
+---
+description: Основной контекст проекта aitovideo — стек, структура, деплой. Читать всегда при старте работы.
+alwaysApply: true
+---
+
+# aitovideo — Project Context
+
+## Что это
+Telegram Mini App для очереди видео (YouTube, Rutube, VK Video).
+
+## Стек
+- **Backend:** Node.js 20 + TypeScript + Express + SQLite (better-sqlite3)
+- **Frontend:** React + TypeScript + Vite
+- **Bot:** node-telegram-bot-api
+- **Логирование:** pino + pino-pretty (dev)
+- **Деплой:** Docker Swarm (основной), Docker Compose (legacy)
+
+## Структура
+```
+aitovideo/
+├── backend/src/
+│   ├── api/          # Express routes + middleware
+│   ├── bot/          # Telegram bot handlers
+│   ├── models/       # DB schema + migrations
+│   ├── services/     # Бизнес-логика, парсеры видео
+│   ├── types/        # TypeScript типы
+│   └── logger.ts     # Pino logger (apiLogger, botLogger, etc.)
+├── miniapp/src/
+│   ├── components/
+│   ├── pages/
+│   └── api.ts
+└── .openclaw/        # Контекст для AI-агентов
+```
+
+## Деплой
+**Production — Docker Swarm:**
+```bash
+docker stack deploy -c docker-compose.swarm.yml aitovideo
+```
+
+**Legacy — Docker Compose:**
+```bash
+docker-compose up -d
+```
+
+**НЕ запускать локально для проверки после деплоя** — только через Swarm.
+
+## База данных
+- SQLite, путь: `backend/data/videos.db`
+- Схема: таблицы `users`, `videos`
+- Миграции: `backend/src/models/migrations/`
+
+## Логирование
+Использовать `logger.ts`, не `console.log`:
+```typescript
+import { apiLogger } from '../logger.js';
+apiLogger.info({ userId }, 'User action');
+apiLogger.error({ err, userId }, 'Something failed');
+```
+
+## Правила кода
+- ES modules (`"type": "module"` в package.json)
+- Импорты с расширением `.js` (TypeScript с ESM)
+- Conventional commits: `feat:`, `fix:`, `docs:`
+- Ветки: `feat/#N-name`, `fix/#N-name`
+- PR с `[auto]` если от агента
+
+## Ограничения (критичные)
+- ❌ НЕ удалять таблицы `users`, `videos`
+- ❌ НЕ менять существующие колонки без миграции
+- ❌ НЕ менять публичный API (`/api/videos`) без версионирования
+- ❌ НЕ хардкодить токены и секреты
+- ✅ Добавлять колонки можно (nullable по умолчанию)
+- ✅ UI изменения miniapp — свободно
+
+## Human review обязателен при
+- Изменении схемы БД (удаление/переименование)
+- Изменении деплой-конфигурации (Swarm stack)
+- Новых внешних API интеграциях
+- Major обновлениях зависимостей

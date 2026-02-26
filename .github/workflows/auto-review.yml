@@ -1,0 +1,87 @@
+name: Auto Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  auto-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      # Backend checks
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+      
+      - name: Type check backend
+        working-directory: ./backend
+        run: npx tsc --noEmit
+      
+      - name: Lint backend
+        working-directory: ./backend
+        run: npm run lint || echo "No lint script"
+      
+      # Mini App checks
+      - name: Install miniapp dependencies
+        working-directory: ./miniapp
+        run: npm ci
+      
+      - name: Type check miniapp
+        working-directory: ./miniapp
+        run: npx tsc --noEmit
+      
+      - name: Build miniapp
+        working-directory: ./miniapp
+        run: npm run build
+      
+      # Check for constraint violations
+      - name: Check database constraints
+        run: |
+          # Check for dangerous SQL operations
+          if git diff --name-only origin/${{ github.base_ref }} | grep -q "\.sql\|models/"; then
+            echo "⚠️ Database changes detected — require human review"
+            exit 1
+          fi
+      
+      - name: Check for API breaking changes
+        run: |
+          # Check if API response format changed
+          if git diff origin/${{ github.base_ref }} -- backend/src/api/ | grep -E "^[-+].*res\.json|send\(" | grep -v "^[-+]{3}"; then
+            echo "⚠️ API response changes detected — require human review"
+            exit 1
+          fi
+      
+      # Auto-approve if all checks pass and PR is from agent
+      - name: Auto-approve agent PRs
+        if: |
+          success() && 
+          contains(github.event.pull_request.title, '[auto]') &&
+          github.event.pull_request.user.login == 'Rast53'
+        uses: hmarr/auto-approve-action@v4
+        with:
+          review-message: "✅ Автоматические проверки пройдены. Одобрено."
+      
+      - name: Auto-merge if approved
+        if: |
+          success() && 
+          contains(github.event.pull_request.title, '[auto]') &&
+          github.event.pull_request.user.login == 'Rast53'
+        uses: pascalgn/automerge-action@v0.16.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_METHOD: squash
+          MERGE_COMMIT_MESSAGE: "{pullRequest.title} (#{pullRequest.number})"
