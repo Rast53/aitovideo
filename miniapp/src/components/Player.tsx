@@ -5,6 +5,7 @@ import './Player.css';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
 const YOUTUBE_QUALITY_STORAGE_KEY = 'aitovideo.youtube.quality';
+const PLAYER_ZOOM_STORAGE_KEY = 'aitovideo.player.zoom';
 const YOUTUBE_QUALITIES = ['360', '720', '1080'] as const;
 type YoutubeQuality = (typeof YOUTUBE_QUALITIES)[number];
 const DEFAULT_YOUTUBE_QUALITY: YoutubeQuality = '720';
@@ -68,6 +69,19 @@ function clampZoomScale(value: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(value.toFixed(3))));
 }
 
+function getInitialZoomScale(): number {
+  if (typeof window === 'undefined') return ZOOM_MIN;
+  try {
+    const storedValue = window.localStorage.getItem(PLAYER_ZOOM_STORAGE_KEY);
+    if (!storedValue) return ZOOM_MIN;
+    const parsed = Number.parseFloat(storedValue);
+    if (!Number.isFinite(parsed)) return ZOOM_MIN;
+    return clampZoomScale(parsed);
+  } catch {
+    return ZOOM_MIN;
+  }
+}
+
 /**
  * For YouTube we use our own backend proxy (yt-dlp on VPS) instead of iframes.
  * This returns null for YouTube — the component renders a <video> tag instead.
@@ -99,7 +113,7 @@ export function Player({ video, onClose }: PlayerProps) {
   const [loading, setLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
   const [youtubeQuality, setYoutubeQuality] = useState<YoutubeQuality>(getInitialYoutubeQuality);
-  const [zoomScale, setZoomScale] = useState(ZOOM_MIN);
+  const [zoomScale, setZoomScale] = useState(getInitialZoomScale);
   const [isPinching, setIsPinching] = useState(false);
   const nativeVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -217,6 +231,15 @@ export function Player({ video, onClose }: PlayerProps) {
   function handleQualityChange(quality: YoutubeQuality) {
     if (quality === youtubeQuality) return;
     handlePlayerInteraction();
+
+    if (video.platform === 'youtube' && nativeVideoRef.current) {
+      const currentTime = Math.floor(nativeVideoRef.current.currentTime);
+      if (Number.isFinite(currentTime) && currentTime > 0) {
+        elapsedRef.current = currentTime;
+        setStartFrom(currentTime);
+      }
+    }
+
     setYoutubeQuality(quality);
   }
 
@@ -230,6 +253,16 @@ export function Player({ video, onClose }: PlayerProps) {
     }
   }, [youtubeQuality]);
 
+  // ── Persist zoom scale preference ──────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(PLAYER_ZOOM_STORAGE_KEY, String(zoomScale));
+    } catch {
+      // Ignore browsers where localStorage is disabled.
+    }
+  }, [zoomScale]);
+
   // ── Reset player state when video changes ──────────────────────────────────
   useEffect(() => {
     setLoading(true);
@@ -238,7 +271,9 @@ export function Player({ video, onClose }: PlayerProps) {
     setShowResumeModal(false);
     setStartFrom(0);
     setPlaybackReady(false);
-    resetZoom();
+    setIsPinching(false);
+    pinchStartDistanceRef.current = null;
+    pinchStartScaleRef.current = ZOOM_MIN;
     lastTapTimestampRef.current = 0;
   }, [video.id]);
 
