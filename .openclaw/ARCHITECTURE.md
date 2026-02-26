@@ -81,9 +81,24 @@ aitovideo/
 └── deploy.sh             # Deployment script
 ```
 
+## Логирование
+
+Используется **pino** (структурированные JSON-логи).
+
+```typescript
+import { apiLogger, botLogger, serviceLogger } from '../logger.js';
+// НЕ использовать console.log в production-коде!
+
+apiLogger.info({ userId, action }, 'User action');
+apiLogger.error({ err, url }, 'Request failed');
+```
+
+Child-логгеры: `apiLogger`, `botLogger`, `dbLogger`, `serviceLogger`.
+В dev-режиме: pino-pretty (цветной вывод). В production: JSON.
+
 ## Как запускать
 
-### Локально
+### Локально (разработка)
 ```bash
 # Backend
 cd backend
@@ -97,16 +112,43 @@ npm install
 npm run dev        # Dev server на :5173
 ```
 
-### Тесты
+## Деплой
+
+### Production — Docker Swarm (основной)
 ```bash
-cd backend
-npm test           # Если настроены
+# Деплой / обновление стека
+docker stack deploy -c docker-compose.yml aitovideo
+
+# Проверить статус сервисов
+docker service ls | grep aitovideo
+
+# Логи backend
+docker service logs aitovideo_backend --tail 100 -f
+
+# Логи bot
+docker service logs aitovideo_bot --tail 100 -f
+
+# Принудительный рестарт (после push нового образа)
+docker service update --force aitovideo_backend
+docker service update --force aitovideo_bot
 ```
 
-## Деплой
-- Скрипт: `./deploy.sh`
-- Требует: Docker, docker-compose
-- Конфигурация: `docker-compose.yml`, `nginx.conf`
+### Сборка и публикация образов
+```bash
+# Backend
+docker build -t rast53/aitovideo-backend:latest ./backend
+docker push rast53/aitovideo-backend:latest
+
+# Mini App
+docker build -t rast53/aitovideo-miniapp:latest ./miniapp
+docker push rast53/aitovideo-miniapp:latest
+```
+
+### Инфраструктура Swarm
+- **Сети:** `traefik-net` (external, для reverse proxy), `aitovideo-net` (overlay, внутренняя)
+- **Volumes:** `backend-data` (SQLite persistent storage)
+- **Traefik:** автоматические SSL сертификаты, домен через `AITOVIDEO_DOMAIN`
+- **Переменные:** `BOT_TOKEN`, `AITOVIDEO_DOMAIN`, `VK_SERVICE_TOKEN`
 
 ## Связанные файлы
 - `README.md` — общая документация

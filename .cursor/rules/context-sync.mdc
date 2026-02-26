@@ -1,0 +1,19 @@
+---
+description: Синхронизация .openclaw/ документов после значимых изменений в aitovideo.
+globs: "backend/src/**/*.ts,miniapp/src/**/*.tsx,miniapp/src/**/*.ts,docker-compose*.yml,backend/package.json"
+alwaysApply: false
+---
+
+# Context Sync (aitovideo)
+
+После значимых изменений обновлять документы в `.openclaw/`:
+
+| Что изменилось | Что обновить |
+|---|---|
+| Архитектура, стек | `.openclaw/ARCHITECTURE.md` |
+| Принятые решения | `.openclaw/DECISIONS.md` |
+| Новые ограничения | `.openclaw/CONSTRAINTS.md` |
+| Деплой, инфра | `.openclaw/ARCHITECTURE.md` → раздел Деплой |
+| Новый парсер | `.openclaw/ARCHITECTURE.md` → раздел Паттерны |
+
+Принципы: обновлять только затронутые файлы, ссылаться на код а не копировать его, фиксировать дату.
