@@ -15,6 +15,7 @@ import type {
   UpdateVideoResponse
 } from '../../types/api.js';
 import type { BaseVideoInfo } from '../../types/video.js';
+import { apiLogger } from '../../logger.js';
 
 const router = Router();
 
@@ -43,7 +44,7 @@ router.get(
       const videos = VideoModel.findByUserId(user.id);
       res.json({ videos });
     } catch (error) {
-      console.error('Get videos error:', error);
+      apiLogger.error({ error: getErrorMessage(error) }, 'Get videos error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -108,7 +109,7 @@ router.post(
             throw new Error('Unknown platform');
         }
       } catch (error) {
-        console.error('Failed to get video info:', error);
+        apiLogger.warn({ error: getErrorMessage(error), platform: parsed.platform }, 'Failed to get video info');
         // Use default info
         videoInfo = {
           title: 'Unknown Video',
@@ -130,6 +131,10 @@ router.post(
         duration: videoInfo.duration
       });
 
+      if (!video) {
+        throw new Error('Failed to create video record');
+      }
+
       // If YouTube, find alternatives in background
       if (parsed.platform === 'youtube') {
         void findAlternatives(videoInfo.title, videoInfo.channelName, user.id, video.id);
@@ -137,7 +142,11 @@ router.post(
 
       res.status(201).json({ video });
     } catch (error) {
-      console.error('Add video error:', getErrorMessage(error));
+      apiLogger.error({ 
+        error: getErrorMessage(error), 
+        stack: error instanceof Error ? error.stack : undefined,
+        body: req.body 
+      }, 'Add video error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -145,6 +154,8 @@ router.post(
 
 async function findAlternatives(query: string, originalChannel: string, userId: number, parentId: number) {
   try {
+    apiLogger.info({ query, parentId }, 'Starting background search for alternatives');
+    
     // Search both platforms
     const [vkAlts, rutubeAlts] = await Promise.all([
       vk.searchVkVideos(query, 3),
@@ -200,9 +211,10 @@ async function findAlternatives(query: string, originalChannel: string, userId: 
         duration: alt.duration,
         parentId
       });
+      apiLogger.info({ title: alt.title, platform: alt.platform }, 'Added alternative video');
     }
   } catch (err) {
-    console.warn('[AltSearch] Background search failed:', err);
+    apiLogger.warn({ error: getErrorMessage(err) }, '[AltSearch] Background search failed');
   }
 }
 
@@ -237,7 +249,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (error) {
-      console.error('Delete video error:', error);
+      apiLogger.error({ error: getErrorMessage(error) }, 'Delete video error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -275,7 +287,7 @@ router.patch(
 
       res.json({ video });
     } catch (error) {
-      console.error('Update video error:', error);
+      apiLogger.error({ error: getErrorMessage(error) }, 'Update video error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
