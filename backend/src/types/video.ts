@@ -36,11 +36,12 @@ export interface BaseVideoInfo {
   channelName: string;
   thumbnailUrl: string | null;
   duration: number | null;
+  externalId?: string;
 }
 
 export interface YouTubeVideoInfo extends BaseVideoInfo {
-  streamUrl?: string;
   instance?: string;
+  streamUrl?: string;
 }
 
 export interface RutubeVideoInfo extends BaseVideoInfo {

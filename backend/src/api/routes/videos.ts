@@ -157,6 +157,10 @@ async function findAlternatives(query: string, userId: number) {
     ];
 
     for (const alt of allAlts) {
+      if (!alt.externalId) {
+        continue;
+      }
+
       // Skip if already exists
       if (VideoModel.exists(userId, alt.platform, alt.externalId)) {
         continue;
