@@ -244,37 +244,53 @@ export async function getVkVideoInfo(ownerId: string, videoId: string): Promise<
   };
 }
 
-export async function searchVkVideos(query: string, limit = 3): Promise<VkVideoInfo[]> {
-  const token = process.env.VK_SERVICE_TOKEN;
-  if (!token) {
-    console.warn('[VK Search] No service token — skipping API search');
-    return [];
-  }
+// ─── Method 2: Googlebot UA Search (No Token Required) ───────────────────────
 
-  const url =
-    `https://api.vk.com/method/video.search` +
-    `?q=${encodeURIComponent(query)}` +
-    `&access_token=${token}` +
-    `&v=5.199` +
-    `&count=${limit}` +
-    `&extended=0`;
+export async function searchVkVideos(query: string, limit = 3): Promise<VkVideoInfo[]> {
+  const searchUrl = `https://vk.com/video?q=${encodeURIComponent(query)}`;
 
   try {
-    const res = await fetch(url, { headers: { ...DESKTOP_HEADERS, Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
-    const data = (await res.json()) as VkApiResponse;
+    const res = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'ru-RU,ru;q=0.9'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
 
-    if (data.error || !data.response?.items) return [];
+    if (!res.ok) return [];
 
-    return data.response.items.map(item => ({
-      title: decodeHtmlEntities(item.title ?? 'VK Video'),
-      channelName: 'VK Video',
-      thumbnailUrl: bestThumbnail(item),
-      duration: item.duration ?? null,
-      embedUrl: `https://vk.com/video_ext.php?oid=${item.owner_id}&id=${item.id}&hd=2`,
-      externalId: `${item.owner_id}_${item.id}`
-    }));
+    const html = await readHtml(res);
+    
+    // Simple regex to find video links: /video-XXXX_XXXX
+    const videoMatches = [...html.matchAll(/\/video(-?\d+)_(\d+)/g)];
+    const results: VkVideoInfo[] = [];
+    const seen = new Set<string>();
+
+    for (const match of videoMatches) {
+      if (results.length >= limit) break;
+      const ownerId = match[1];
+      const videoId = match[2];
+      const fullId = `${ownerId}_${videoId}`;
+      
+      if (seen.has(fullId)) continue;
+      seen.add(fullId);
+
+      // Since we only get IDs from search page without metadata, 
+      // we'll quickly fetch info for each found video using existing scraper
+      const info = await getVkVideoInfo(ownerId, videoId);
+      if (info && info.title !== 'VK Video') {
+        results.push({
+          ...info,
+          externalId: fullId
+        });
+      }
+    }
+
+    return results;
   } catch (err) {
-    console.warn('[VK Search] Search failed:', err instanceof Error ? err.message : err);
+    console.warn('[VK Search Scraping] Error:', err);
     return [];
   }
 }
