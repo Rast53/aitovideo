@@ -150,6 +150,11 @@ docker push rast53/aitovideo-miniapp:latest
 - **Traefik:** автоматические SSL сертификаты, домен через `AITOVIDEO_DOMAIN`
 - **Переменные:** `BOT_TOKEN`, `AITOVIDEO_DOMAIN`, `VK_SERVICE_TOKEN`
 
+## Debug & Verification
+
+- Автономная проверка рантаймов и скриптов: [`DEBUG.md`](../DEBUG.md)
+- Дата последней верификации: 2026-02-26
+
 ## Связанные файлы
 - `README.md` — общая документация
 - `deploy.sh` — скрипт деплоя
