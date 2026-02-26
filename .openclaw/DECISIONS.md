@@ -2,7 +2,7 @@
 
 ## 2026-02-26: Профили качества YouTube и zoom в плеере Mini App
 
-**Решение:** Для YouTube-плеера используем серверный query-параметр `quality` (`360|720|1080`) и UI-селектор качества в Mini App с сохранением выбора в `localStorage`. Для просмотра на мобильных добавлен zoom (`pinch-to-zoom` + fallback-кнопки `+/-`) и double-tap reset.
+**Решение:** Для YouTube-плеера используем серверный query-параметр `quality` (`360|720|1080`) и UI-селектор качества в Mini App с сохранением выбора в `localStorage`. Для 1080p backend использует selector `best[height<=1080][ext=mp4][vcodec!=none][acodec!=none]/best[height<=1080]`, чтобы предпочитать единый URL потока без принудительного fallback на 720p. В UI оставлен gesture zoom (`pinch-to-zoom`) и double-tap reset без отдельных `+/-` кнопок.
 
 **Контекст:**
 - Нужен быстрый контроль качества без отдельного экрана настроек.
@@ -11,11 +11,11 @@
 
 **Альтернативы:**
 - Отдельная страница настроек качества (хуже UX в fullscreen-плеере).
-- Только gesture-based zoom без кнопок (не покрывает устройства/браузеры с ограниченными touch-жестами).
+- Muxed selector через `137+140` для 1080p (может вернуть несколько URL и приводить к понижению качества).
 
 **Последствия:**
 - Backend `GET /api/youtube/stream/:videoId` должен учитывать `quality` в format selector и кэше stream URL.
-- Frontend `Player` хранит пользовательское качество в `localStorage` и применяет `transform: scale()` к media-контейнеру.
+- Frontend `Player` хранит пользовательское качество в `localStorage`, показывает активное качество в панели и применяет `transform: scale()` к media-контейнеру через touch-жесты.
 
 ---
 

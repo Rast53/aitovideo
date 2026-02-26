@@ -23,7 +23,7 @@ const DEFAULT_QUALITY: YoutubeQuality = '720';
 const QUALITY_FORMAT_SELECTOR: Record<YoutubeQuality, string> = {
   '360': '"18/22/best[height<=360][vcodec!=none][acodec!=none][ext=mp4]"',
   '720': '"22/18/best[height<=720][vcodec!=none][acodec!=none][ext=mp4]"',
-  '1080': '"137+140/22/18/best[height<=1080][vcodec!=none][acodec!=none][ext=mp4]"'
+  '1080': '"best[height<=1080][ext=mp4][vcodec!=none][acodec!=none]/best[height<=1080]"'
 };
 
 function isYoutubeQuality(value: string): value is YoutubeQuality {
@@ -52,7 +52,7 @@ async function getStreamUrl(videoId: string, quality: YoutubeQuality): Promise<s
   const proxyArg = process.env.YTDLP_PROXY ? `--proxy "${process.env.YTDLP_PROXY}"` : '';
   const formatSelector = QUALITY_FORMAT_SELECTOR[quality];
 
-  // yt-dlp format selector: 360=18, 720=22, 1080=137+140 (+ fallbacks)
+  // Prefer a single progressive stream URL for each quality tier.
   const cmd = [
     'yt-dlp',
     '-f', formatSelector,
@@ -67,14 +67,10 @@ async function getStreamUrl(videoId: string, quality: YoutubeQuality): Promise<s
   if (stderr) console.warn(`[YouTube proxy] yt-dlp stderr: ${stderr.trim()}`);
 
   const streamUrls = stdout.trim().split('\n').map((line) => line.trim()).filter(Boolean);
-  if (quality === '1080' && streamUrls.length > 1) {
+  if (streamUrls.length > 1) {
     console.warn(
-      `[YouTube proxy] quality=1080 returned multiple stream URLs (${streamUrls.length}), falling back to 720p progressive stream`
+      `[YouTube proxy] quality=${quality} returned multiple stream URLs (${streamUrls.length}); using first URL`
     );
-
-    const fallbackUrl = await getStreamUrl(videoId, '720');
-    urlCache.set(cacheKey, { url: fallbackUrl, expires: Date.now() + CACHE_TTL_MS });
-    return fallbackUrl;
   }
 
   const url = streamUrls[0] ?? '';

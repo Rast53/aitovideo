@@ -62,7 +62,6 @@ function getTouchesDistance(touches: ReactTouchEvent<HTMLDivElement>['touches'])
 
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 3;
-const ZOOM_STEP = 0.25;
 const DOUBLE_TAP_DELAY_MS = 280;
 
 function clampZoomScale(value: number): number {
@@ -216,16 +215,6 @@ export function Player({ video, onClose }: PlayerProps) {
     pinchStartDistanceRef.current = null;
     pinchStartScaleRef.current = zoomScale;
     setIsPinching(false);
-  }
-
-  function handleZoomIn() {
-    handlePlayerInteraction();
-    setZoomScale((prev) => clampZoomScale(prev + ZOOM_STEP));
-  }
-
-  function handleZoomOut() {
-    handlePlayerInteraction();
-    setZoomScale((prev) => clampZoomScale(prev - ZOOM_STEP));
   }
 
   function handleQualityChange(quality: YoutubeQuality) {
@@ -418,9 +407,7 @@ export function Player({ video, onClose }: PlayerProps) {
   const youtubeStreamUrl = playbackReady && isYoutube
     ? `${API_URL}/api/youtube/stream/${video.external_id}?quality=${youtubeQuality}`
     : null;
-  const canZoomOut = zoomScale > ZOOM_MIN + 0.001;
-  const canZoomIn = zoomScale < ZOOM_MAX - 0.001;
-  const zoomScaleLabel = `${Number(zoomScale.toFixed(2))}x`;
+  const isTopControlsVisible = isBackButtonVisible;
 
   return (
     <div className="player-overlay" onClick={onClose}>
@@ -432,7 +419,7 @@ export function Player({ video, onClose }: PlayerProps) {
       >
 
         {/* ── Top controls: back + quality selector ───────────────────── */}
-        {isBackButtonVisible && (
+        {isTopControlsVisible && (
           <div className="player-top-controls">
             <button
               type="button"
@@ -458,6 +445,9 @@ export function Player({ video, onClose }: PlayerProps) {
                     {quality}p
                   </button>
                 ))}
+                <span className="player-quality-current" aria-live="polite">
+                  {youtubeQuality}p
+                </span>
               </div>
             )}
           </div>
@@ -535,37 +525,6 @@ export function Player({ video, onClose }: PlayerProps) {
           <div className="player-error">Не удалось загрузить видео</div>
         )}
 
-        {/* ── Zoom controls (fallback for non-pinch devices) ───────────── */}
-        {!showResumeModal && (
-          <div className="player-zoom-controls" role="group" aria-label="Управление масштабом видео">
-            <button
-              type="button"
-              className="player-zoom-btn"
-              onClick={handleZoomOut}
-              disabled={!canZoomOut}
-              aria-label="Уменьшить масштаб"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              className="player-zoom-btn player-zoom-btn--value"
-              onClick={resetZoom}
-              aria-label="Сбросить масштаб"
-            >
-              {zoomScaleLabel}
-            </button>
-            <button
-              type="button"
-              className="player-zoom-btn"
-              onClick={handleZoomIn}
-              disabled={!canZoomIn}
-              aria-label="Увеличить масштаб"
-            >
-              +
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
