@@ -11,6 +11,7 @@ interface TelegramWebApp {
   expand: () => void;
   setHeaderColor: (color: string) => void;
   setBackgroundColor: (color: string) => void;
+  openLink?: (url: string) => void;
   /** Bot API 7.7+: разворачивает Mini App на весь экран */
   requestFullscreen?: () => void;
   /** Bot API 7.7+: выходит из полноэкранного режима */
