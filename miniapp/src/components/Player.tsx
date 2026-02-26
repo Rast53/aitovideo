@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { api } from '../api';
 import type { Video, VideoPlatform, VideoProgress } from '../types/api';
 import './Player.css';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
+const YOUTUBE_QUALITY_STORAGE_KEY = 'aitovideo.youtube.quality';
+const YOUTUBE_QUALITIES = ['360', '720', '1080'] as const;
+type YoutubeQuality = (typeof YOUTUBE_QUALITIES)[number];
+const DEFAULT_YOUTUBE_QUALITY: YoutubeQuality = '720';
 
 interface PlayerProps {
   video: Video;
@@ -32,6 +36,36 @@ function formatTime(totalSeconds: number): string {
   const s = totalSeconds % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function isYoutubeQuality(value: string | null): value is YoutubeQuality {
+  return value === '360' || value === '720' || value === '1080';
+}
+
+function getInitialYoutubeQuality(): YoutubeQuality {
+  if (typeof window === 'undefined') return DEFAULT_YOUTUBE_QUALITY;
+  try {
+    const storedValue = window.localStorage.getItem(YOUTUBE_QUALITY_STORAGE_KEY);
+    return isYoutubeQuality(storedValue) ? storedValue : DEFAULT_YOUTUBE_QUALITY;
+  } catch {
+    return DEFAULT_YOUTUBE_QUALITY;
+  }
+}
+
+function getTouchesDistance(touches: ReactTouchEvent<HTMLDivElement>['touches']): number {
+  if (touches.length < 2) return 0;
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
+
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.25;
+const DOUBLE_TAP_DELAY_MS = 280;
+
+function clampZoomScale(value: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(value.toFixed(3))));
 }
 
 /**
@@ -64,6 +98,9 @@ const BACK_BUTTON_HIDE_MS = 3_000;
 export function Player({ video, onClose }: PlayerProps) {
   const [loading, setLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
+  const [youtubeQuality, setYoutubeQuality] = useState<YoutubeQuality>(getInitialYoutubeQuality);
+  const [zoomScale, setZoomScale] = useState(ZOOM_MIN);
+  const [isPinching, setIsPinching] = useState(false);
   const nativeVideoRef = useRef<HTMLVideoElement>(null);
 
   // Progress / resume
@@ -80,6 +117,9 @@ export function Player({ video, onClose }: PlayerProps) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const backButtonHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinchStartDistanceRef = useRef<number | null>(null);
+  const pinchStartScaleRef = useRef(ZOOM_MIN);
+  const lastTapTimestampRef = useRef(0);
   const videoIdRef = useRef(video.id);
   useEffect(() => { videoIdRef.current = video.id; }, [video.id]);
 
@@ -102,6 +142,112 @@ export function Player({ video, onClose }: PlayerProps) {
       backButtonHideTimerRef.current = null;
     }, BACK_BUTTON_HIDE_MS);
   }
+
+  function handlePlayerInteraction() {
+    setIsBackButtonVisible(true);
+    restartBackButtonHideTimer();
+  }
+
+  function resetZoom() {
+    setZoomScale(ZOOM_MIN);
+    setIsPinching(false);
+    pinchStartDistanceRef.current = null;
+    pinchStartScaleRef.current = ZOOM_MIN;
+  }
+
+  function handleZoomTouchStart(event: ReactTouchEvent<HTMLDivElement>) {
+    handlePlayerInteraction();
+
+    if (event.touches.length === 2) {
+      pinchStartDistanceRef.current = getTouchesDistance(event.touches);
+      pinchStartScaleRef.current = zoomScale;
+      setIsPinching(true);
+      lastTapTimestampRef.current = 0;
+      return;
+    }
+
+    if (event.touches.length !== 1) return;
+
+    const now = Date.now();
+    if (now - lastTapTimestampRef.current <= DOUBLE_TAP_DELAY_MS) {
+      event.preventDefault();
+      resetZoom();
+      lastTapTimestampRef.current = 0;
+      return;
+    }
+
+    lastTapTimestampRef.current = now;
+  }
+
+  function handleZoomTouchMove(event: ReactTouchEvent<HTMLDivElement>) {
+    if (event.touches.length !== 2 || pinchStartDistanceRef.current === null) return;
+
+    const currentDistance = getTouchesDistance(event.touches);
+    if (currentDistance <= 0) return;
+
+    event.preventDefault();
+    const ratio = currentDistance / pinchStartDistanceRef.current;
+    const nextScale = clampZoomScale(pinchStartScaleRef.current * ratio);
+    setZoomScale(nextScale);
+  }
+
+  function handleZoomTouchEnd(event: ReactTouchEvent<HTMLDivElement>) {
+    if (event.touches.length >= 2) return;
+    pinchStartDistanceRef.current = null;
+    pinchStartScaleRef.current = zoomScale;
+    setIsPinching(false);
+  }
+
+  function handleZoomTouchCancel() {
+    pinchStartDistanceRef.current = null;
+    pinchStartScaleRef.current = zoomScale;
+    setIsPinching(false);
+  }
+
+  function handleZoomIn() {
+    handlePlayerInteraction();
+    setZoomScale((prev) => clampZoomScale(prev + ZOOM_STEP));
+  }
+
+  function handleZoomOut() {
+    handlePlayerInteraction();
+    setZoomScale((prev) => clampZoomScale(prev - ZOOM_STEP));
+  }
+
+  function handleQualityChange(quality: YoutubeQuality) {
+    if (quality === youtubeQuality) return;
+    handlePlayerInteraction();
+    setYoutubeQuality(quality);
+  }
+
+  // ── Persist preferred YouTube quality ──────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(YOUTUBE_QUALITY_STORAGE_KEY, youtubeQuality);
+    } catch {
+      // Ignore browsers where localStorage is disabled.
+    }
+  }, [youtubeQuality]);
+
+  // ── Reset player state when video changes ──────────────────────────────────
+  useEffect(() => {
+    setLoading(true);
+    setVideoError(false);
+    setSavedProgress(null);
+    setShowResumeModal(false);
+    setStartFrom(0);
+    setPlaybackReady(false);
+    resetZoom();
+    lastTapTimestampRef.current = 0;
+  }, [video.id]);
+
+  // ── Changing YouTube quality should reload stream ──────────────────────────
+  useEffect(() => {
+    if (video.platform !== 'youtube') return;
+    setLoading(true);
+    setVideoError(false);
+  }, [video.platform, video.external_id, youtubeQuality]);
 
   // ── Unmount: flush final position ────────────────────────────────────────
   useEffect(() => {
@@ -235,12 +381,11 @@ export function Player({ video, onClose }: PlayerProps) {
   const embedUrl = playbackReady ? getEmbedUrl(video.platform, video.external_id, startFrom) : null;
   // YouTube stream goes through our backend proxy
   const youtubeStreamUrl = playbackReady && isYoutube
-    ? `${API_URL}/api/youtube/stream/${video.external_id}`
+    ? `${API_URL}/api/youtube/stream/${video.external_id}?quality=${youtubeQuality}`
     : null;
-  const handlePlayerInteraction = () => {
-    setIsBackButtonVisible(true);
-    restartBackButtonHideTimer();
-  };
+  const canZoomOut = zoomScale > ZOOM_MIN + 0.001;
+  const canZoomIn = zoomScale < ZOOM_MAX - 0.001;
+  const zoomScaleLabel = `${Number(zoomScale.toFixed(2))}x`;
 
   return (
     <div className="player-overlay" onClick={onClose}>
@@ -251,17 +396,36 @@ export function Player({ video, onClose }: PlayerProps) {
         ref={wrapperRef}
       >
 
-        {/* ── Back button ──────────────────────────────────────────────── */}
+        {/* ── Top controls: back + quality selector ───────────────────── */}
         {isBackButtonVisible && (
-          <button
-            className="player-back-btn"
-            onClick={onClose}
-            aria-label="Назад к списку"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-            </svg>
-          </button>
+          <div className="player-top-controls">
+            <button
+              type="button"
+              className="player-back-btn"
+              onClick={onClose}
+              aria-label="Назад к списку"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+              </svg>
+            </button>
+
+            {isYoutube && (
+              <div className="player-quality-selector" role="group" aria-label="Выбор качества YouTube">
+                {YOUTUBE_QUALITIES.map((quality) => (
+                  <button
+                    key={quality}
+                    type="button"
+                    className={`player-quality-btn${youtubeQuality === quality ? ' player-quality-btn--active' : ''}`}
+                    onClick={() => handleQualityChange(quality)}
+                    aria-pressed={youtubeQuality === quality}
+                  >
+                    {quality}p
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* ── Resume modal ─────────────────────────────────────────────── */}
@@ -290,36 +454,82 @@ export function Player({ video, onClose }: PlayerProps) {
           <div className="player-loading"><div className="spinner" /></div>
         )}
 
-        {/* YouTube: native <video> via backend proxy */}
-        {youtubeStreamUrl && !videoError && (
-          <video
-            ref={nativeVideoRef}
-            className="player-native-video"
-            src={youtubeStreamUrl}
-            autoPlay
-            controls
-            playsInline
-            onCanPlay={() => setLoading(false)}
-            onError={() => { setLoading(false); setVideoError(true); }}
-          />
-        )}
+        <div
+          className="player-media-stage"
+          onDoubleClick={resetZoom}
+          onTouchStart={handleZoomTouchStart}
+          onTouchMove={handleZoomTouchMove}
+          onTouchEnd={handleZoomTouchEnd}
+          onTouchCancel={handleZoomTouchCancel}
+        >
+          <div
+            className={`player-media-content${isPinching ? ' player-media-content--pinching' : ''}`}
+            style={{ transform: `scale(${zoomScale})` }}
+          >
+            {/* YouTube: native <video> via backend proxy */}
+            {youtubeStreamUrl && !videoError && (
+              <video
+                ref={nativeVideoRef}
+                className="player-native-video"
+                src={youtubeStreamUrl}
+                autoPlay
+                controls
+                playsInline
+                onCanPlay={() => setLoading(false)}
+                onError={() => { setLoading(false); setVideoError(true); }}
+              />
+            )}
 
-        {/* Rutube / VK: iframe embed */}
-        {embedUrl && (
-          <iframe
-            ref={iframeRef}
-            src={embedUrl}
-            title={video.title}
-            frameBorder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-            allowFullScreen
-            onLoad={() => setLoading(false)}
-          />
-        )}
+            {/* Rutube / VK: iframe embed */}
+            {embedUrl && (
+              <iframe
+                ref={iframeRef}
+                src={embedUrl}
+                title={video.title}
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                allowFullScreen
+                onLoad={() => setLoading(false)}
+              />
+            )}
+          </div>
+        </div>
 
         {/* Error / no source */}
         {!isProgressLoading && !showResumeModal && !embedUrl && (!youtubeStreamUrl || videoError) && (
           <div className="player-error">Не удалось загрузить видео</div>
+        )}
+
+        {/* ── Zoom controls (fallback for non-pinch devices) ───────────── */}
+        {!showResumeModal && (
+          <div className="player-zoom-controls" role="group" aria-label="Управление масштабом видео">
+            <button
+              type="button"
+              className="player-zoom-btn"
+              onClick={handleZoomOut}
+              disabled={!canZoomOut}
+              aria-label="Уменьшить масштаб"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              className="player-zoom-btn player-zoom-btn--value"
+              onClick={resetZoom}
+              aria-label="Сбросить масштаб"
+            >
+              {zoomScaleLabel}
+            </button>
+            <button
+              type="button"
+              className="player-zoom-btn"
+              onClick={handleZoomIn}
+              disabled={!canZoomIn}
+              aria-label="Увеличить масштаб"
+            >
+              +
+            </button>
+          </div>
         )}
       </div>
     </div>

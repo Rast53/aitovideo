@@ -55,6 +55,12 @@ Telegram Mini App для управления очередью видео с You
 3. Валидировать входные данные (zod или ручная проверка)
 4. Обрабатывать ошибки с понятными сообщениями
 
+### YouTube playback (proxy + качество)
+- Прокси-роут: `GET /api/youtube/stream/:videoId?quality=360|720|1080`
+- Кэш stream URL учитывает комбинацию `videoId + quality`
+- В Mini App `Player` качество выбирается в UI и сохраняется в `localStorage`
+- Для mobile UX применяется zoom в самом плеере: `pinch-to-zoom`, кнопки `+/-`, double-tap reset
+
 ### Изменение базы данных
 1. Создать миграцию в `backend/src/models/migrations/`
 2. Добавить запуск миграции в `backend/src/models/index.ts`
