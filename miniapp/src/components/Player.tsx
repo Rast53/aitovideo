@@ -5,12 +5,6 @@ import './Player.css';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
 
-const platformIcons: Record<VideoPlatform, string> = {
-  youtube: '📺',
-  rutube: '▶️',
-  vk: '🔴'
-};
-
 interface PlayerProps {
   video: Video;
   onClose: () => void;
@@ -61,30 +55,6 @@ function getEmbedUrl(platform: VideoPlatform, externalId: string, startSeconds: 
   }
 }
 
-function getExternalUrl(platform: VideoPlatform, externalId: string): string | null {
-  switch (platform) {
-    case 'youtube':
-      return `https://www.youtube.com/watch?v=${externalId}`;
-    case 'rutube':
-      return `https://rutube.ru/video/${externalId}/`;
-    case 'vk': {
-      const [oid, vid] = externalId.split('_');
-      if (!oid || !vid) return null;
-      return `https://vkvideo.ru/video${oid}_${vid}`;
-    }
-    default:
-      return null;
-  }
-}
-
-function openExternal(url: string): void {
-  if (window.Telegram?.WebApp?.openLink) {
-    window.Telegram.WebApp.openLink(url);
-  } else {
-    window.open(url, '_blank');
-  }
-}
-
 const MIN_RESUME_SECONDS = 10;
 const SAVE_INTERVAL_MS = 10_000;
 const BACK_BUTTON_HIDE_MS = 3_000;
@@ -109,12 +79,28 @@ export function Player({ video, onClose }: PlayerProps) {
   const elapsedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const backButtonHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoIdRef = useRef(video.id);
   useEffect(() => { videoIdRef.current = video.id; }, [video.id]);
 
   function clearTimers() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (saveTimerRef.current) { clearInterval(saveTimerRef.current); saveTimerRef.current = null; }
+  }
+
+  function clearBackButtonHideTimer() {
+    if (backButtonHideTimerRef.current) {
+      window.clearTimeout(backButtonHideTimerRef.current);
+      backButtonHideTimerRef.current = null;
+    }
+  }
+
+  function restartBackButtonHideTimer() {
+    clearBackButtonHideTimer();
+    backButtonHideTimerRef.current = window.setTimeout(() => {
+      setIsBackButtonVisible(false);
+      backButtonHideTimerRef.current = null;
+    }, BACK_BUTTON_HIDE_MS);
   }
 
   // ── Unmount: flush final position ────────────────────────────────────────
@@ -171,12 +157,10 @@ export function Player({ video, onClose }: PlayerProps) {
   // Fully hide back button after short delay (remove from DOM, no blocking layer)
   useEffect(() => {
     setIsBackButtonVisible(true);
-    const hideTimer = window.setTimeout(() => {
-      setIsBackButtonVisible(false);
-    }, BACK_BUTTON_HIDE_MS);
+    restartBackButtonHideTimer();
 
     return () => {
-      window.clearTimeout(hideTimer);
+      clearBackButtonHideTimer();
     };
   }, [video.id]);
 
@@ -253,10 +237,19 @@ export function Player({ video, onClose }: PlayerProps) {
   const youtubeStreamUrl = playbackReady && isYoutube
     ? `${API_URL}/api/youtube/stream/${video.external_id}`
     : null;
+  const handlePlayerInteraction = () => {
+    setIsBackButtonVisible(true);
+    restartBackButtonHideTimer();
+  };
 
   return (
     <div className="player-overlay" onClick={onClose}>
-      <div className="player-container" onClick={(e) => e.stopPropagation()} ref={wrapperRef}>
+      <div
+        className="player-container"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDownCapture={handlePlayerInteraction}
+        ref={wrapperRef}
+      >
 
         {/* ── Back button ──────────────────────────────────────────────── */}
         {isBackButtonVisible && (
@@ -270,28 +263,6 @@ export function Player({ video, onClose }: PlayerProps) {
             </svg>
           </button>
         )}
-
-        {/* ── Video title overlay ───────────────────────────────────────── */}
-        <div className="player-title-overlay">
-          {platformIcons[video.platform]} {video.title}
-        </div>
-
-        {/* ── Open externally (bottom bar, YouTube hint) ────────────────── */}
-        {(() => {
-          const extUrl = getExternalUrl(video.platform, video.external_id);
-          if (!extUrl) return null;
-          return (
-            <button
-              className="player-open-external-btn"
-              onClick={(e) => { e.stopPropagation(); openExternal(extUrl); }}
-              aria-label="Открыть в браузере"
-            >
-              {video.platform === 'youtube'
-                ? '📺 YouTube заблокирован? → Открыть в браузере (VPN)'
-                : '🔗 Открыть в браузере'}
-            </button>
-          );
-        })()}
 
         {/* ── Resume modal ─────────────────────────────────────────────── */}
         {showResumeModal && savedProgress && (
