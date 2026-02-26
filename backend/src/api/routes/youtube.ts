@@ -17,14 +17,32 @@ const urlCache = new Map<string, CachedUrl>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
 const VIDEO_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
+const SUPPORTED_QUALITIES = ['360', '720', '1080'] as const;
+type YoutubeQuality = (typeof SUPPORTED_QUALITIES)[number];
+const DEFAULT_QUALITY: YoutubeQuality = '720';
+const QUALITY_FORMAT_SELECTOR: Record<YoutubeQuality, string> = {
+  '360': '"18/22/best[height<=360][vcodec!=none][acodec!=none][ext=mp4]"',
+  '720': '"22/18/best[height<=720][vcodec!=none][acodec!=none][ext=mp4]"',
+  '1080': '"137+140/22/18/best[height<=1080][vcodec!=none][acodec!=none][ext=mp4]"'
+};
+
+function isYoutubeQuality(value: string): value is YoutubeQuality {
+  return (SUPPORTED_QUALITIES as readonly string[]).includes(value);
+}
+
+function parseQuality(value: unknown): YoutubeQuality {
+  if (typeof value !== 'string') return DEFAULT_QUALITY;
+  return isYoutubeQuality(value) ? value : DEFAULT_QUALITY;
+}
 
 /**
  * Get a direct stream URL for a YouTube video via yt-dlp.
  * Formats 22 (720p MP4) and 18 (360p MP4) are combined audio+video —
  * no ffmpeg muxing required, supported by all browsers natively.
  */
-async function getStreamUrl(videoId: string): Promise<string> {
-  const cached = urlCache.get(videoId);
+async function getStreamUrl(videoId: string, quality: YoutubeQuality): Promise<string> {
+  const cacheKey = `${videoId}:${quality}`;
+  const cached = urlCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     return cached.url;
   }
@@ -32,11 +50,12 @@ async function getStreamUrl(videoId: string): Promise<string> {
   // Support outbound proxy for VPS in regions where YouTube is blocked.
   // Set YTDLP_PROXY=socks5://host:port or http://host:port in environment.
   const proxyArg = process.env.YTDLP_PROXY ? `--proxy "${process.env.YTDLP_PROXY}"` : '';
+  const formatSelector = QUALITY_FORMAT_SELECTOR[quality];
 
-  // yt-dlp format selector: try 720p → 360p → best combined ≤720p
+  // yt-dlp format selector: 360=18, 720=22, 1080=137+140 (+ fallbacks)
   const cmd = [
     'yt-dlp',
-    '-f', '"22/18/best[height<=720][vcodec!=none][acodec!=none][ext=mp4]"',
+    '-f', formatSelector,
     '--no-playlist',
     proxyArg,
     '--get-url',
@@ -47,13 +66,24 @@ async function getStreamUrl(videoId: string): Promise<string> {
 
   if (stderr) console.warn(`[YouTube proxy] yt-dlp stderr: ${stderr.trim()}`);
 
-  const url = stdout.trim().split('\n')[0] ?? '';
-  if (!url.startsWith('http')) {
-    throw new Error(`yt-dlp did not return a valid URL for ${videoId}`);
+  const streamUrls = stdout.trim().split('\n').map((line) => line.trim()).filter(Boolean);
+  if (quality === '1080' && streamUrls.length > 1) {
+    console.warn(
+      `[YouTube proxy] quality=1080 returned multiple stream URLs (${streamUrls.length}), falling back to 720p progressive stream`
+    );
+
+    const fallbackUrl = await getStreamUrl(videoId, '720');
+    urlCache.set(cacheKey, { url: fallbackUrl, expires: Date.now() + CACHE_TTL_MS });
+    return fallbackUrl;
   }
 
-  urlCache.set(videoId, { url, expires: Date.now() + CACHE_TTL_MS });
-  console.log(`[YouTube proxy] stream URL cached for ${videoId}`);
+  const url = streamUrls[0] ?? '';
+  if (!url.startsWith('http')) {
+    throw new Error(`yt-dlp did not return a valid URL for ${videoId} (quality=${quality})`);
+  }
+
+  urlCache.set(cacheKey, { url, expires: Date.now() + CACHE_TTL_MS });
+  console.log(`[YouTube proxy] stream URL cached for ${videoId} quality=${quality}`);
   return url;
 }
 
@@ -64,75 +94,84 @@ async function getStreamUrl(videoId: string): Promise<string> {
  * Supports HTTP Range requests so the client can seek.
  * No Telegram auth required — video ID is already public knowledge.
  */
-router.get('/stream/:videoId', async (req: Request<{ videoId: string }>, res: Response): Promise<void> => {
-  const videoId = String(req.params.videoId ?? '');
+router.get(
+  '/stream/:videoId',
+  async (
+    req: Request<{ videoId: string }, unknown, unknown, { quality?: string }>,
+    res: Response
+  ): Promise<void> => {
+    const videoId = String(req.params.videoId ?? '');
+    const quality = parseQuality(req.query.quality);
 
-  if (!videoId || !VIDEO_ID_RE.test(videoId)) {
-    res.status(400).json({ error: 'Invalid YouTube video ID' });
-    return;
-  }
-
-  console.log(`[YouTube proxy] request for ${videoId}  range=${String(req.headers.range ?? 'none')}`);
-
-  try {
-    const streamUrl = await getStreamUrl(videoId);
-
-    const upstreamHeaders: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-      'Accept-Language': 'ru-RU,ru;q=0.9',
-      'Referer': 'https://www.youtube.com/'
-    };
-
-    if (req.headers.range) {
-      upstreamHeaders['Range'] = String(req.headers.range);
-    }
-
-    const upstream = await fetch(streamUrl, {
-      headers: upstreamHeaders,
-      signal: AbortSignal.timeout(30_000)
-    });
-
-    console.log(`[YouTube proxy] upstream status=${upstream.status} for ${videoId}`);
-
-    // If the cached URL returned 403/410, evict cache and retry once
-    if (upstream.status === 403 || upstream.status === 410) {
-      urlCache.delete(videoId);
-      res.status(502).json({ error: 'Stream URL expired, please retry' });
+    if (!videoId || !VIDEO_ID_RE.test(videoId)) {
+      res.status(400).json({ error: 'Invalid YouTube video ID' });
       return;
     }
 
-    res.status(upstream.status);
+    console.log(
+      `[YouTube proxy] request for ${videoId} quality=${quality} range=${String(req.headers.range ?? 'none')}`
+    );
 
-    // Forward relevant response headers
-    for (const header of [
-      'content-type', 'content-length', 'content-range',
-      'accept-ranges', 'last-modified', 'etag'
-    ]) {
-      const value = upstream.headers.get(header);
-      if (value) res.setHeader(header, value);
-    }
-    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const streamUrl = await getStreamUrl(videoId, quality);
 
-    if (!upstream.body) {
-      res.end();
-      return;
-    }
+      const upstreamHeaders: Record<string, string> = {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'ru-RU,ru;q=0.9',
+        'Referer': 'https://www.youtube.com/'
+      };
 
-    // Pipe the stream to the client
-    const nodeStream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]);
-    nodeStream.pipe(res);
+      if (req.headers.range) {
+        upstreamHeaders['Range'] = String(req.headers.range);
+      }
 
-    req.on('close', () => nodeStream.destroy());
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[YouTube proxy] error for ${videoId}:`, msg);
-    if (!res.headersSent) {
-      res.status(502).json({ error: 'Stream unavailable', detail: msg });
+      const upstream = await fetch(streamUrl, {
+        headers: upstreamHeaders,
+        signal: AbortSignal.timeout(30_000)
+      });
+
+      console.log(`[YouTube proxy] upstream status=${upstream.status} for ${videoId} quality=${quality}`);
+
+      // If the cached URL returned 403/410, evict cache and retry once
+      if (upstream.status === 403 || upstream.status === 410) {
+        urlCache.delete(`${videoId}:${quality}`);
+        res.status(502).json({ error: 'Stream URL expired, please retry' });
+        return;
+      }
+
+      res.status(upstream.status);
+
+      // Forward relevant response headers
+      for (const header of [
+        'content-type', 'content-length', 'content-range',
+        'accept-ranges', 'last-modified', 'etag'
+      ]) {
+        const value = upstream.headers.get(header);
+        if (value) res.setHeader(header, value);
+      }
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (!upstream.body) {
+        res.end();
+        return;
+      }
+
+      // Pipe the stream to the client
+      const nodeStream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]);
+      nodeStream.pipe(res);
+
+      req.on('close', () => nodeStream.destroy());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[YouTube proxy] error for ${videoId} quality=${quality}:`, msg);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Stream unavailable', detail: msg });
+      }
     }
   }
-});
+);
 
 export default router;
