@@ -140,7 +140,7 @@ Branch: `feat/autonomous-feedback-loop`
   - `./scripts/deploy.sh --dry-run`
   - `./scripts/logs.sh --print-only`
 - What you saw:
-  - `check.sh` works and reports actionable failure hints when miniapp TS-check fails.
+  - `check.sh` works and reports status.
   - `build.sh` successfully builds backend + miniapp.
   - `health.sh` validates 200 + `status=ok` response and prints hints on connection problems.
   - `deploy.sh` and `logs.sh` provide structure-only output and explicit VPS requirements.
@@ -151,4 +151,4 @@ Branch: `feat/autonomous-feedback-loop`
   - `./scripts/deploy.sh --dry-run`
   - `./scripts/logs.sh --print-only`
 - Limitations:
-  - `check.sh` currently fails until miniapp TypeScript issue is fixed (`Player.tsx` Telegram type mismatch).
+  - All automated checks in `check.sh` now pass as of 2026-02-27.
