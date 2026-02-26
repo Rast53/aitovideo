@@ -58,6 +58,52 @@ async function getStreamUrl(videoId: string): Promise<string> {
 }
 
 /**
+ * GET /api/youtube/thumbnail/:videoId
+ *
+ * Proxies a YouTube thumbnail (hqdefault.jpg) through the backend
+ * to bypass regional blocks on i.ytimg.com (e.g., in Russia).
+ */
+router.get('/thumbnail/:videoId', async (req: Request<{ videoId: string }>, res: Response): Promise<void> => {
+  const videoId = String(req.params.videoId ?? '');
+
+  if (!videoId || !VIDEO_ID_RE.test(videoId)) {
+    res.status(400).json({ error: 'Invalid YouTube video ID' });
+    return;
+  }
+
+  const thumbUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+  
+  try {
+    const upstream = await fetch(thumbUrl, {
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!upstream.ok) {
+      console.warn(`[Thumbnail proxy] upstream status=${upstream.status} for ${videoId}`);
+      res.status(upstream.status).json({ error: 'Thumbnail unavailable' });
+      return;
+    }
+
+    res.status(upstream.status);
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24h
+
+    if (!upstream.body) {
+      res.end();
+      return;
+    }
+
+    const nodeStream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]);
+    nodeStream.pipe(res);
+  } catch (err) {
+    console.error(`[Thumbnail proxy] error for ${videoId}:`, err);
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Thumbnail proxy error' });
+    }
+  }
+});
+
+/**
  * GET /api/youtube/stream/:videoId
  *
  * Proxies a YouTube video stream through the backend.

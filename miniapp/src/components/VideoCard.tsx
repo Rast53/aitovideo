@@ -13,13 +13,27 @@ function getThumbnailSrc(video: Video): string | null {
   if (video.platform === 'vk') {
     return `${API_URL}/api/proxy/thumbnail?url=${encodeURIComponent(video.thumbnail_url)}`;
   }
+  if (video.platform === 'youtube') {
+    // If the thumbnail URL is present, try to extract video ID.
+    const match = video.thumbnail_url.match(/\/vi\/([^\/]+)\//);
+    const videoId = match ? match[1] : video.external_id;
+    if (videoId) {
+      return `${API_URL}/api/youtube/thumbnail/${videoId}`;
+    }
+  }
   return video.thumbnail_url;
 }
 
 const platformIcons: Record<VideoPlatform, string> = {
-  youtube: '📺',
+  youtube: '🔴', // YouTube brand color
   rutube: '▶️',
-  vk: '🔴'
+  vk: '🔵'      // VK brand color
+};
+
+const platformEmojis: Record<VideoPlatform, string> = {
+  youtube: '📹',
+  rutube: '🎥',
+  vk: '📱'
 };
 
 function formatDuration(seconds: number | null): string {
@@ -69,12 +83,9 @@ export function VideoCard({ video, onClick, onDelete, onMarkWatched }: VideoCard
             }}
           />
         ) : null}
-        <div
-          className="video-thumbnail-placeholder"
-          style={{ display: thumbnailSrc ? 'none' : 'flex' }}
-        >
-          {platformIcons[video.platform] ?? '📹'}
-        </div>
+          <div className="video-thumbnail-placeholder" style={{ display: thumbnailSrc ? 'none' : 'flex' }}>
+            {platformEmojis[video.platform] ?? '📹'}
+          </div>
         {video.duration !== null && video.duration > 0 && (
           <span className="video-duration">{formatDuration(video.duration)}</span>
         )}
