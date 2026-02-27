@@ -83,54 +83,6 @@
   background: rgba(0, 0, 0, 0.8);
 }
 
-.player-quality-selector {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(10px);
-}
-
-.player-quality-btn {
-  min-width: 58px;
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--tg-theme-text-color, #fff);
-  background: transparent;
-  border: 1px solid transparent;
-  transition: background 0.2s, color 0.2s, transform 0.15s, border-color 0.2s;
-}
-
-.player-quality-btn--active {
-  color: var(--tg-theme-button-text-color, #fff);
-  background: var(--tg-theme-button-color, #2ea6ff);
-}
-
-.player-quality-btn:active {
-  transform: scale(0.96);
-}
-
-.player-quality-current {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.14);
-  color: var(--tg-theme-text-color, #fff);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-}
-
 /* ── Native video (YouTube proxy) ───────────────────────────────────────── */
 
 .player-native-video {
