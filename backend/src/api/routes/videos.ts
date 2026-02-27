@@ -156,16 +156,27 @@ async function findAlternatives(query: string, originalChannel: string, userId: 
   try {
     apiLogger.info({ query, parentId }, 'Starting background search for alternatives');
     
-    // Search both platforms
-    const [vkAlts, rutubeAlts] = await Promise.all([
-      vk.searchVkVideos(query, 3),
-      rutube.searchRutubeVideos(query, 3)
-    ]);
+    // Split query by common delimiters to try shorter versions if full title fails
+    const queryParts = query.split(/[?|.!]/).map(p => p.trim()).filter(p => p.length > 5);
+    const searchQueries = [query, queryParts[0]].filter(Boolean);
 
-    const allAlts = [
-      ...vkAlts.map((v) => ({ ...v, platform: 'vk' as const })),
-      ...rutubeAlts.map((v) => ({ ...v, platform: 'rutube' as const }))
-    ];
+    let allFound: any[] = [];
+    
+    for (const q of searchQueries) {
+      if (!q) continue;
+      const [vkAlts, rutubeAlts] = await Promise.all([
+        vk.searchVkVideos(q, 3),
+        rutube.searchRutubeVideos(q, 3)
+      ]);
+      
+      allFound = [
+        ...allFound,
+        ...vkAlts.map((v) => ({ ...v, platform: 'vk' as const })),
+        ...rutubeAlts.map((v) => ({ ...v, platform: 'rutube' as const }))
+      ];
+      
+      if (allFound.length > 0) break; // Found something, stop refining
+    }
 
     const normalize = (s: string) =>
       s
@@ -175,20 +186,26 @@ async function findAlternatives(query: string, originalChannel: string, userId: 
         .filter((w) => w.length > 2);
 
     const targetWords = normalize(originalChannel);
+    const titleWords = normalize(query);
 
-    for (const alt of allAlts) {
+    for (const alt of allFound) {
       if (!alt.externalId) {
         continue;
       }
 
-      // Fuzzy matching channel names
-      const candidateWords = normalize(alt.channelName || '');
-      const isMatch =
+      // 1. Channel match check
+      const candidateChannelWords = normalize(alt.channelName || '');
+      const isChannelMatch =
         targetWords.length === 0 ||
-        candidateWords.length === 0 ||
-        targetWords.some((w) => candidateWords.includes(w));
+        candidateChannelWords.length === 0 ||
+        targetWords.some((w) => candidateChannelWords.includes(w));
 
-      if (!isMatch) {
+      // 2. Title fallback check (if channel doesn't match, at least 50% of title words should)
+      const altTitleWords = normalize(alt.title || '');
+      const matchedTitleWords = titleWords.filter(w => altTitleWords.includes(w));
+      const isTitleMatch = matchedTitleWords.length >= Math.ceil(titleWords.length * 0.4);
+
+      if (!isChannelMatch && !isTitleMatch) {
         continue;
       }
 
