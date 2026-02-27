@@ -25,6 +25,12 @@ const platformIcons: Record<VideoPlatform, string> = {
   vk: '🔵'
 };
 
+const platformNames: Record<VideoPlatform, string> = {
+  youtube: 'YouTube',
+  rutube: 'Rutube',
+  vk: 'VK'
+};
+
 const platformEmojis: Record<VideoPlatform, string> = {
   youtube: '📹',
   rutube: '🎥',
@@ -103,16 +109,22 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
           {alternatives.length > 0 && (
             <div className="video-alternatives">
               <span className="alt-label">Также на:</span>
-              {alternatives.map(alt => (
-                <button 
-                  key={alt.id} 
-                  className="alt-platform-icon" 
-                  onClick={(e) => handleAltClick(e, alt)}
-                  title={alt.channel_name || alt.platform}
-                >
-                  {platformIcons[alt.platform]}
-                </button>
-              ))}
+              <div className="alt-chips">
+                {alternatives.map(alt => (
+                  <button
+                    key={alt.id}
+                    className={`alt-chip alt-chip--${alt.platform}`}
+                    onClick={(e) => handleAltClick(e, alt)}
+                    title={alt.title}
+                  >
+                    <span className="alt-chip-icon">{platformIcons[alt.platform]}</span>
+                    <span className="alt-chip-name">{platformNames[alt.platform]}</span>
+                    {alt.channel_name && alt.channel_name !== 'Unknown' && (
+                      <span className="alt-chip-channel">· {alt.channel_name}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

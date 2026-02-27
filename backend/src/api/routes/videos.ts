@@ -14,7 +14,7 @@ import type {
   UpdateVideoRequestBody,
   UpdateVideoResponse
 } from '../../types/api.js';
-import type { BaseVideoInfo } from '../../types/video.js';
+import type { BaseVideoInfo, VideoPlatform } from '../../types/video.js';
 import { apiLogger } from '../../logger.js';
 
 const router = Router();
@@ -152,64 +152,151 @@ router.post(
   }
 );
 
+// ─── Fuzzy-match helpers ───────────────────────────────────────────────────
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  let curr = new Array<number>(n + 1);
+
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      curr[j] =
+        a[i - 1] === b[j - 1]
+          ? prev[j - 1]
+          : 1 + Math.min(prev[j - 1], prev[j], curr[j - 1]);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n];
+}
+
+function stringSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  if (!a || !b) return 0;
+  const maxLen = Math.max(a.length, b.length);
+  return 1 - levenshtein(a, b) / maxLen;
+}
+
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/[^a-zа-яё0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function tokenize(s: string): string[] {
+  return normalizeForMatch(s).split(' ').filter((w) => w.length > 2);
+}
+
+/**
+ * Fuzzy channel comparison: exact containment, word overlap, and Levenshtein
+ * similarity on the full normalized strings. Returns 0–1 score.
+ */
+function channelSimilarity(original: string, candidate: string): number {
+  const a = normalizeForMatch(original);
+  const b = normalizeForMatch(candidate);
+
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  // Containment check (one is a substring of the other)
+  if (a.includes(b) || b.includes(a)) return 0.85;
+
+  // Full-string Levenshtein similarity
+  const fullSim = stringSimilarity(a, b);
+
+  // Word-level overlap (Jaccard-like)
+  const aWords = tokenize(original);
+  const bWords = tokenize(candidate);
+  if (aWords.length === 0 || bWords.length === 0) return fullSim;
+
+  let wordMatches = 0;
+  for (const w of aWords) {
+    if (bWords.some((bw) => bw === w || stringSimilarity(w, bw) >= 0.75)) {
+      wordMatches++;
+    }
+  }
+  const wordSim = wordMatches / Math.max(aWords.length, bWords.length);
+
+  return Math.max(fullSim, wordSim);
+}
+
+function titleOverlapScore(original: string, candidate: string): number {
+  const origWords = tokenize(original);
+  const candWords = tokenize(candidate);
+  if (origWords.length === 0) return 0;
+
+  let matches = 0;
+  for (const w of origWords) {
+    if (candWords.some((cw) => cw === w || stringSimilarity(w, cw) >= 0.8)) {
+      matches++;
+    }
+  }
+  return matches / origWords.length;
+}
+
+// ─── AltSearch ─────────────────────────────────────────────────────────────
+
+interface AltCandidate extends BaseVideoInfo {
+  platform: VideoPlatform;
+  externalId: string;
+}
+
+const CHANNEL_SIM_THRESHOLD = 0.45;
+const TITLE_OVERLAP_THRESHOLD = 0.4;
+
 async function findAlternatives(query: string, originalChannel: string, userId: number, parentId: number) {
   try {
     apiLogger.info({ query, parentId }, 'Starting background search for alternatives');
-    
-    // Split query by common delimiters to try shorter versions if full title fails
+
     const queryParts = query.split(/[?|.!]/).map(p => p.trim()).filter(p => p.length > 5);
     const searchQueries = [query, queryParts[0]].filter(Boolean);
 
-    let allFound: any[] = [];
-    
+    let allFound: AltCandidate[] = [];
+
     for (const q of searchQueries) {
       if (!q) continue;
       const [vkAlts, rutubeAlts] = await Promise.all([
         vk.searchVkVideos(q, 3),
         rutube.searchRutubeVideos(q, 3)
       ]);
-      
-      allFound = [
-        ...allFound,
-        ...vkAlts.map((v) => ({ ...v, platform: 'vk' as const })),
-        ...rutubeAlts.map((v) => ({ ...v, platform: 'rutube' as const }))
-      ];
-      
-      if (allFound.length > 0) break; // Found something, stop refining
+
+      const vkCandidates: AltCandidate[] = vkAlts
+        .filter((v) => v.externalId)
+        .map((v) => ({ ...v, externalId: v.externalId!, platform: 'vk' as const }));
+
+      const rutubeCandidates: AltCandidate[] = rutubeAlts
+        .filter((v) => v.externalId)
+        .map((v) => ({ ...v, externalId: v.externalId!, platform: 'rutube' as const }));
+
+      allFound = [...allFound, ...vkCandidates, ...rutubeCandidates];
+      if (allFound.length > 0) break;
     }
 
-    const normalize = (s: string) =>
-      s
-        .toLowerCase()
-        .replace(/[^a-zа-я0-9]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length > 2);
+    // Score and sort candidates
+    const scored = allFound.map((alt) => {
+      const chSim = channelSimilarity(originalChannel, alt.channelName || '');
+      const titleOvr = titleOverlapScore(query, alt.title || '');
+      return { alt, chSim, titleOvr, score: chSim * 0.4 + titleOvr * 0.6 };
+    });
 
-    const targetWords = normalize(originalChannel);
-    const titleWords = normalize(query);
+    scored.sort((a, b) => b.score - a.score);
 
-    for (const alt of allFound) {
-      if (!alt.externalId) {
+    for (const { alt, chSim, titleOvr } of scored) {
+      const isChannelOk = chSim >= CHANNEL_SIM_THRESHOLD;
+      const isTitleOk = titleOvr >= TITLE_OVERLAP_THRESHOLD;
+
+      if (!isChannelOk && !isTitleOk) {
+        apiLogger.debug(
+          { title: alt.title, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2) },
+          'Skipping alt: below thresholds'
+        );
         continue;
       }
 
-      // 1. Channel match check
-      const candidateChannelWords = normalize(alt.channelName || '');
-      const isChannelMatch =
-        targetWords.length === 0 ||
-        candidateChannelWords.length === 0 ||
-        targetWords.some((w) => candidateChannelWords.includes(w));
-
-      // 2. Title fallback check (if channel doesn't match, at least 50% of title words should)
-      const altTitleWords = normalize(alt.title || '');
-      const matchedTitleWords = titleWords.filter(w => altTitleWords.includes(w));
-      const isTitleMatch = matchedTitleWords.length >= Math.ceil(titleWords.length * 0.4);
-
-      if (!isChannelMatch && !isTitleMatch) {
-        continue;
-      }
-
-      // Skip if already exists
       if (VideoModel.exists(userId, alt.platform, alt.externalId)) {
         continue;
       }
@@ -228,7 +315,10 @@ async function findAlternatives(query: string, originalChannel: string, userId: 
         duration: alt.duration,
         parentId
       });
-      apiLogger.info({ title: alt.title, platform: alt.platform }, 'Added alternative video');
+      apiLogger.info(
+        { title: alt.title, platform: alt.platform, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2) },
+        'Added alternative video'
+      );
     }
   } catch (err) {
     apiLogger.warn({ error: getErrorMessage(err) }, '[AltSearch] Background search failed');
