@@ -4,11 +4,7 @@ import type { Video, VideoPlatform, VideoProgress } from '../types/api';
 import './Player.css';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
-const YOUTUBE_QUALITY_STORAGE_KEY = 'aitovideo.youtube.quality';
 const PLAYER_ZOOM_STORAGE_KEY = 'aitovideo.player.zoom';
-const YOUTUBE_QUALITIES = ['360', '720', '1080'] as const;
-type YoutubeQuality = (typeof YOUTUBE_QUALITIES)[number];
-const DEFAULT_YOUTUBE_QUALITY: YoutubeQuality = '720';
 
 interface PlayerProps {
   video: Video;
@@ -37,20 +33,6 @@ function formatTime(totalSeconds: number): string {
   const s = totalSeconds % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-function isYoutubeQuality(value: string | null): value is YoutubeQuality {
-  return value === '360' || value === '720' || value === '1080';
-}
-
-function getInitialYoutubeQuality(): YoutubeQuality {
-  if (typeof window === 'undefined') return DEFAULT_YOUTUBE_QUALITY;
-  try {
-    const storedValue = window.localStorage.getItem(YOUTUBE_QUALITY_STORAGE_KEY);
-    return isYoutubeQuality(storedValue) ? storedValue : DEFAULT_YOUTUBE_QUALITY;
-  } catch {
-    return DEFAULT_YOUTUBE_QUALITY;
-  }
 }
 
 function getTouchesDistance(touches: ReactTouchEvent<HTMLDivElement>['touches']): number {
@@ -111,7 +93,6 @@ const BACK_BUTTON_HIDE_MS = 3_000;
 export function Player({ video, onClose }: PlayerProps) {
   const [loading, setLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
-  const [youtubeQuality, setYoutubeQuality] = useState<YoutubeQuality>(getInitialYoutubeQuality);
   const [zoomScale, setZoomScale] = useState(getInitialZoomScale);
   const [isPinching, setIsPinching] = useState(false);
   const nativeVideoRef = useRef<HTMLVideoElement>(null);
@@ -217,31 +198,6 @@ export function Player({ video, onClose }: PlayerProps) {
     setIsPinching(false);
   }
 
-  function handleQualityChange(quality: YoutubeQuality) {
-    if (quality === youtubeQuality) return;
-    handlePlayerInteraction();
-
-    if (video.platform === 'youtube' && nativeVideoRef.current) {
-      const currentTime = Math.floor(nativeVideoRef.current.currentTime);
-      if (Number.isFinite(currentTime) && currentTime > 0) {
-        elapsedRef.current = currentTime;
-        setStartFrom(currentTime);
-      }
-    }
-
-    setYoutubeQuality(quality);
-  }
-
-  // ── Persist preferred YouTube quality ──────────────────────────────────────
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(YOUTUBE_QUALITY_STORAGE_KEY, youtubeQuality);
-    } catch {
-      // Ignore browsers where localStorage is disabled.
-    }
-  }, [youtubeQuality]);
-
   // ── Persist zoom scale preference ──────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -271,7 +227,7 @@ export function Player({ video, onClose }: PlayerProps) {
     if (video.platform !== 'youtube') return;
     setLoading(true);
     setVideoError(false);
-  }, [video.platform, video.external_id, youtubeQuality]);
+  }, [video.platform, video.external_id]);
 
   // ── Unmount: flush final position ────────────────────────────────────────
   useEffect(() => {
@@ -405,7 +361,7 @@ export function Player({ video, onClose }: PlayerProps) {
   const embedUrl = playbackReady ? getEmbedUrl(video.platform, video.external_id, startFrom) : null;
   // YouTube stream goes through our backend proxy
   const youtubeStreamUrl = playbackReady && isYoutube
-    ? `${API_URL}/api/youtube/stream/${video.external_id}?quality=${youtubeQuality}`
+    ? `${API_URL}/api/youtube/stream/${video.external_id}`
     : null;
   const isTopControlsVisible = isBackButtonVisible;
 
@@ -418,7 +374,7 @@ export function Player({ video, onClose }: PlayerProps) {
         ref={wrapperRef}
       >
 
-        {/* ── Top controls: back + quality selector ───────────────────── */}
+        {/* ── Top controls: back ─────────────────────────────────────────── */}
         {isTopControlsVisible && (
           <div className="player-top-controls">
             <button
@@ -431,25 +387,6 @@ export function Player({ video, onClose }: PlayerProps) {
                 <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
               </svg>
             </button>
-
-            {isYoutube && (
-              <div className="player-quality-selector" role="group" aria-label="Выбор качества YouTube">
-                {YOUTUBE_QUALITIES.map((quality) => (
-                  <button
-                    key={quality}
-                    type="button"
-                    className={`player-quality-btn${youtubeQuality === quality ? ' player-quality-btn--active' : ''}`}
-                    onClick={() => handleQualityChange(quality)}
-                    aria-pressed={youtubeQuality === quality}
-                  >
-                    {quality}p
-                  </button>
-                ))}
-                <span className="player-quality-current" aria-live="polite">
-                  {youtubeQuality}p
-                </span>
-              </div>
-            )}
           </div>
         )}
 
