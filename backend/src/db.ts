@@ -70,6 +70,18 @@ function initTables(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_progress_user_video ON video_progress(user_id, video_id)');
 }
 
+/** Additive migrations for existing databases (ALTER TABLE for new columns) */
+function runMigrations(): void {
+  const existingCols = (db.pragma('table_info(videos)') as Array<{ name: string }>).map((c) => c.name);
+
+  if (!existingCols.includes('parent_id')) {
+    db.exec(
+      'ALTER TABLE videos ADD COLUMN parent_id INTEGER REFERENCES videos(id) ON DELETE SET NULL'
+    );
+    console.log('[db] Migration: added parent_id column to videos');
+  }
+}
+
 /** One-time fix: replace HTML-encoded & (&amp;) in thumbnail URLs saved before entity decoding was applied */
 function fixAmpersandsInThumbnails(): void {
   const result = db
@@ -86,6 +98,7 @@ function fixAmpersandsInThumbnails(): void {
 }
 
 initTables();
+runMigrations();
 fixAmpersandsInThumbnails();
 
 export default db;
