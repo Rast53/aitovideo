@@ -38,23 +38,39 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to VPS Docker Swarm
+      - uses: actions/checkout@v4
+
+      - name: Copy docker-compose.yml to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: docker-compose.yml
+          target: /root/aitovideo/
+
+      - name: Deploy stack to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: OPENROUTER_API_KEY,BOT_TOKEN,VK_SERVICE_TOKEN
           script: |
-            docker service update \
-              --image rast53/aitovideo-backend:${{ github.sha }} \
-              --env-add YANDEX_SEARCH_API_KEY=$YANDEX_SEARCH_API_KEY \
-              --env-add YANDEX_FOLDER_ID=$YANDEX_FOLDER_ID \
-              aitovideo_backend
-            docker service update --image rast53/aitovideo-miniapp:${{ github.sha }} aitovideo_miniapp
-            docker service update \
-              --image rast53/aitovideo-backend:${{ github.sha }} \
-              aitovideo_bot
+            cd /root/aitovideo
+            # Pin images to exact SHA for reliable rolling update
+            sed -i "s|rast53/aitovideo-backend:latest|rast53/aitovideo-backend:${{ github.sha }}|g" docker-compose.yml
+            sed -i "s|rast53/aitovideo-miniapp:latest|rast53/aitovideo-miniapp:${{ github.sha }}|g" docker-compose.yml
+            # Deploy with all env vars from GitHub Secrets
+            AITOVIDEO_DOMAIN=$AITOVIDEO_DOMAIN \
+            BOT_TOKEN=$BOT_TOKEN \
+            YTDLP_PROXY=$YTDLP_PROXY \
+            YANDEX_SEARCH_API_KEY=$YANDEX_SEARCH_API_KEY \
+            YANDEX_FOLDER_ID=$YANDEX_FOLDER_ID \
+            VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-} \
+            docker stack deploy -c docker-compose.yml aitovideo --with-registry-auth
         env:
+          AITOVIDEO_DOMAIN: ${{ secrets.AITOVIDEO_DOMAIN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          YTDLP_PROXY: ${{ secrets.YTDLP_PROXY }}
           YANDEX_SEARCH_API_KEY: ${{ secrets.YANDEX_SEARCH_API_KEY }}
           YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
