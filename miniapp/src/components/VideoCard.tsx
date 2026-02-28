@@ -1,5 +1,6 @@
-import type { MouseEvent } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import type { Video, VideoPlatform } from '../types/api';
+import { YouTubeIcon, VKIcon, RutubeIcon } from './icons/index.js';
 import './VideoCard.css';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
@@ -25,16 +26,10 @@ const platformNames: Record<VideoPlatform, string> = {
   vk: 'VK Video'
 };
 
-const platformIcons: Record<VideoPlatform, string> = {
-  youtube: '🔴',
-  rutube: '▶️',
-  vk: '🔵'
-};
-
-const platformEmojis: Record<VideoPlatform, string> = {
-  youtube: '📹',
-  rutube: '🎥',
-  vk: '📱'
+const platformIconComponents: Record<VideoPlatform, (size: number) => ReactNode> = {
+  youtube: (size) => <YouTubeIcon size={size} className="platform-icon" />,
+  rutube: (size) => <RutubeIcon size={size} className="platform-icon" />,
+  vk: (size) => <VKIcon size={size} className="platform-icon" />,
 };
 
 function formatDuration(seconds: number | null): string {
@@ -91,13 +86,16 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
           />
         ) : null}
         <div className="video-thumbnail-placeholder" style={{ display: thumbnailSrc ? 'none' : 'flex' }}>
-          {platformEmojis[video.platform] ?? '📹'}
+          {platformIconComponents[video.platform]?.(64)}
         </div>
         {video.duration !== null && video.duration > 0 && (
           <span className="video-duration">{formatDuration(video.duration)}</span>
         )}
         {isWatched && <span className="video-watched-badge">✓</span>}
-        <span className="video-platform-badge">{platformNames[video.platform]}</span>
+        <span className="video-platform-badge">
+          {platformIconComponents[video.platform]?.(16)}
+          {platformNames[video.platform]}
+        </span>
       </div>
 
       <div className="video-info">
@@ -118,7 +116,7 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
                     onClick={(e) => handleAltClick(e, alt)}
                     title={alt.title}
                   >
-                    <span className="alt-chip-icon">{platformIcons[alt.platform]}</span>
+                    <span className="alt-chip-icon">{platformIconComponents[alt.platform]?.(20)}</span>
                     <span className="alt-chip-name">{platformNames[alt.platform]}</span>
                     {alt.channel_name && alt.channel_name !== 'Unknown' && (
                       <span className="alt-chip-channel">· {alt.channel_name}</span>
