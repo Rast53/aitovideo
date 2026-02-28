@@ -114,13 +114,9 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
                     key={alt.id}
                     className="alt-chip"
                     onClick={(e) => handleAltClick(e, alt)}
-                    title={alt.title}
+                    title={platformNames[alt.platform]}
                   >
-                    <span className="alt-chip-icon">{platformIconComponents[alt.platform]?.(20)}</span>
-                    <span className="alt-chip-name">{platformNames[alt.platform]}</span>
-                    {alt.channel_name && alt.channel_name !== 'Unknown' && (
-                      <span className="alt-chip-channel">· {alt.channel_name}</span>
-                    )}
+                    {platformIconComponents[alt.platform]?.(22)}
                   </button>
                 ))}
               </div>
