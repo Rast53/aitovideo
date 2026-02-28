@@ -55,18 +55,13 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: AITOVIDEO_DOMAIN,BOT_TOKEN,YTDLP_PROXY,YANDEX_SEARCH_API_KEY,YANDEX_FOLDER_ID
           script: |
             cd /root/aitovideo
             # Pin images to exact SHA for reliable rolling update
             sed -i "s|rast53/aitovideo-backend:latest|rast53/aitovideo-backend:${{ github.sha }}|g" docker-compose.yml
             sed -i "s|rast53/aitovideo-miniapp:latest|rast53/aitovideo-miniapp:${{ github.sha }}|g" docker-compose.yml
             # Deploy with all env vars from GitHub Secrets
-            AITOVIDEO_DOMAIN=$AITOVIDEO_DOMAIN \
-            BOT_TOKEN=$BOT_TOKEN \
-            YTDLP_PROXY=$YTDLP_PROXY \
-            YANDEX_SEARCH_API_KEY=$YANDEX_SEARCH_API_KEY \
-            YANDEX_FOLDER_ID=$YANDEX_FOLDER_ID \
-            VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-} \
             docker stack deploy -c docker-compose.yml aitovideo --with-registry-auth
         env:
           AITOVIDEO_DOMAIN: ${{ secrets.AITOVIDEO_DOMAIN }}
