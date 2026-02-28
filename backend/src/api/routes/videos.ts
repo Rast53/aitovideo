@@ -5,6 +5,7 @@ import { parseVideoUrl } from '../../services/parser.js';
 import * as rutube from '../../services/rutube.js';
 import * as vk from '../../services/vk.js';
 import * as youtube from '../../services/youtube.js';
+import { searchAlternatives } from '../../services/ai-search.js';
 import type {
   AddVideoRequestBody,
   AddVideoResponse,
@@ -14,7 +15,7 @@ import type {
   UpdateVideoRequestBody,
   UpdateVideoResponse
 } from '../../types/api.js';
-import type { BaseVideoInfo, VideoPlatform } from '../../types/video.js';
+import type { BaseVideoInfo } from '../../types/video.js';
 import { apiLogger } from '../../logger.js';
 
 const router = Router();
@@ -240,11 +241,6 @@ function titleOverlapScore(original: string, candidate: string): number {
 
 // ─── AltSearch ─────────────────────────────────────────────────────────────
 
-interface AltCandidate extends BaseVideoInfo {
-  platform: VideoPlatform;
-  externalId: string;
-}
-
 const CHANNEL_SIM_THRESHOLD = 0.45;
 const TITLE_OVERLAP_THRESHOLD = 0.4;
 
@@ -252,29 +248,7 @@ async function findAlternatives(query: string, originalChannel: string, userId: 
   try {
     apiLogger.info({ query, parentId }, 'Starting background search for alternatives');
 
-    const queryParts = query.split(/[?|.!]/).map(p => p.trim()).filter(p => p.length > 5);
-    const searchQueries = [query, queryParts[0]].filter(Boolean);
-
-    let allFound: AltCandidate[] = [];
-
-    for (const q of searchQueries) {
-      if (!q) continue;
-      const [vkAlts, rutubeAlts] = await Promise.all([
-        vk.searchVkVideos(q, 3),
-        rutube.searchRutubeVideos(q, 3)
-      ]);
-
-      const vkCandidates: AltCandidate[] = vkAlts
-        .filter((v) => v.externalId)
-        .map((v) => ({ ...v, externalId: v.externalId!, platform: 'vk' as const }));
-
-      const rutubeCandidates: AltCandidate[] = rutubeAlts
-        .filter((v) => v.externalId)
-        .map((v) => ({ ...v, externalId: v.externalId!, platform: 'rutube' as const }));
-
-      allFound = [...allFound, ...vkCandidates, ...rutubeCandidates];
-      if (allFound.length > 0) break;
-    }
+    const allFound = await searchAlternatives(query, originalChannel);
 
     // Score and sort candidates
     const scored = allFound.map((alt) => {
