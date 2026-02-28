@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": "bash .cursor/hooks/grind.sh",
+        "description": "Continue iterating if goal not reached (check scratchpad)"
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": "bash .cursor/hooks/check-result.sh",
+        "description": "Analyze shell output for common errors and provide hints"
+      }
+    ]
+  }
+}
