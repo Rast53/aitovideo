@@ -25,7 +25,7 @@ jobs:
       # Backend checks
       - name: Install backend dependencies
         working-directory: ./backend
-        run: npm ci
+        run: npm install
       
       - name: Type check backend
         working-directory: ./backend
@@ -38,7 +38,7 @@ jobs:
       # Mini App checks
       - name: Install miniapp dependencies
         working-directory: ./miniapp
-        run: npm ci
+        run: npm install
       
       - name: Type check miniapp
         working-directory: ./miniapp
