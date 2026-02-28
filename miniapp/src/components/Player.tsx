@@ -365,6 +365,10 @@ export function Player({ video, onClose }: PlayerProps) {
     : null;
   const isTopControlsVisible = isBackButtonVisible;
 
+  const resumeProgressFraction = savedProgress && video.duration
+    ? Math.min(savedProgress.position_seconds / video.duration, 1)
+    : 0;
+
   return (
     <div className="player-overlay" onClick={onClose}>
       <div
@@ -390,6 +394,13 @@ export function Player({ video, onClose }: PlayerProps) {
           </div>
         )}
 
+        {/* ── Bottom bar: video title ────────────────────────────────────── */}
+        {isTopControlsVisible && (
+          <div className="player-bottom-bar">
+            <span className="player-bottom-bar__title">{video.title}</span>
+          </div>
+        )}
+
         {/* ── Resume modal ─────────────────────────────────────────────── */}
         {showResumeModal && savedProgress && (
           <div className="resume-modal-overlay" onClick={(e) => e.stopPropagation()}>
@@ -399,6 +410,14 @@ export function Player({ video, onClose }: PlayerProps) {
                 Продолжить просмотр с{' '}
                 <strong>{formatTime(savedProgress.position_seconds)}</strong>?
               </p>
+              {resumeProgressFraction > 0 && (
+                <div className="resume-modal__progress-track">
+                  <div
+                    className="resume-modal__progress-fill"
+                    style={{ width: `${resumeProgressFraction * 100}%` }}
+                  />
+                </div>
+              )}
               <div className="resume-modal__actions">
                 <button className="resume-modal__btn resume-modal__btn--primary" onClick={handleResumeYes}>
                   Продолжить
