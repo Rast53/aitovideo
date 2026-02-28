@@ -10,6 +10,22 @@ interface VideoListProps {
   loading: boolean;
 }
 
+function SkeletonCard() {
+  return (
+    <div className="skeleton-card">
+      <div className="skeleton-thumbnail skeleton-pulse" />
+      <div className="skeleton-info">
+        <div className="skeleton-line skeleton-line--title skeleton-pulse" />
+        <div className="skeleton-line skeleton-line--channel skeleton-pulse" />
+      </div>
+      <div className="skeleton-actions">
+        <div className="skeleton-line skeleton-line--action skeleton-pulse" />
+        <div className="skeleton-line skeleton-line--action skeleton-pulse" />
+      </div>
+    </div>
+  );
+}
+
 export function VideoList({
   videos,
   onVideoClick,
@@ -19,9 +35,11 @@ export function VideoList({
 }: VideoListProps) {
   if (loading) {
     return (
-      <div className="video-list-loading">
-        <div className="spinner" />
-        <p>Загрузка...</p>
+      <div className="video-list">
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     );
   }
@@ -36,9 +54,8 @@ export function VideoList({
     );
   }
 
-  // Group videos: find roots and their alternatives
   const rootVideos = videos.filter((v) => !v.parent_id);
-  
+
   return (
     <div className="video-list">
       {rootVideos.map((video) => {

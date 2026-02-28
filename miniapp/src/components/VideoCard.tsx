@@ -19,16 +19,16 @@ function getThumbnailSrc(video: Video): string | null {
   return video.thumbnail_url;
 }
 
+const platformNames: Record<VideoPlatform, string> = {
+  youtube: 'YouTube',
+  rutube: 'Rutube',
+  vk: 'VK Video'
+};
+
 const platformIcons: Record<VideoPlatform, string> = {
   youtube: '🔴',
   rutube: '▶️',
   vk: '🔵'
-};
-
-const platformNames: Record<VideoPlatform, string> = {
-  youtube: 'YouTube',
-  rutube: 'Rutube',
-  vk: 'VK'
 };
 
 const platformEmojis: Record<VideoPlatform, string> = {
@@ -97,15 +97,16 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
           <span className="video-duration">{formatDuration(video.duration)}</span>
         )}
         {isWatched && <span className="video-watched-badge">✓</span>}
+        <span className="video-platform-badge">{platformNames[video.platform]}</span>
       </div>
 
       <div className="video-info">
         <h3 className="video-title">{video.title}</h3>
         <div className="video-meta">
           <p className="video-channel">
-            {platformIcons[video.platform]} {video.channel_name ?? 'Unknown'}
+            {video.channel_name ?? 'Unknown'}
           </p>
-          
+
           {alternatives.length > 0 && (
             <div className="video-alternatives">
               <span className="alt-label">Также на:</span>
@@ -113,7 +114,7 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
                 {alternatives.map(alt => (
                   <button
                     key={alt.id}
-                    className={`alt-chip alt-chip--${alt.platform}`}
+                    className="alt-chip"
                     onClick={(e) => handleAltClick(e, alt)}
                     title={alt.title}
                   >
@@ -131,13 +132,14 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
       </div>
 
       <div className="video-card-actions">
-        <button className="video-delete-btn" onClick={handleDelete} title="Удалить">🗑️</button>
         <button
-          className={`video-watched-btn${isWatched ? ' video-watched-btn--active' : ''}`}
+          className={`video-action-btn${isWatched ? ' video-action-btn--watched-active' : ''}`}
           onClick={handleWatched}
-          title={isWatched ? 'Снять отметку' : 'Отметить просмотренным'}
         >
-          ✓
+          ✓ {isWatched ? 'Просмотрено' : 'Просмотрено'}
+        </button>
+        <button className="video-action-btn" onClick={handleDelete}>
+          🗑 Удалить
         </button>
       </div>
     </div>

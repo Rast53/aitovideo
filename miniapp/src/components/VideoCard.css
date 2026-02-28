@@ -1,26 +1,26 @@
 .video-card {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
+  flex-direction: column;
   background: var(--tg-theme-secondary-bg-color);
   border-radius: 12px;
   cursor: pointer;
-  transition: transform 0.1s, background 0.2s;
+  overflow: hidden;
+  transition: transform 0.1s;
 }
 
 .video-card:active {
   transform: scale(0.98);
 }
 
+/* ── Thumbnail (16:9, full width) ──────────────────────────────────────── */
+
 .video-thumbnail {
   position: relative;
-  width: 120px;
-  height: 68px;
-  border-radius: 8px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
+  background: var(--tg-theme-bg-color);
   flex-shrink: 0;
-  background: #000;
 }
 
 .video-thumbnail img {
@@ -35,17 +35,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 32px;
   background: var(--tg-theme-bg-color);
 }
 
 .video-duration {
   position: absolute;
-  bottom: 4px;
-  right: 4px;
+  bottom: 8px;
+  right: 8px;
   padding: 2px 6px;
-  background: rgba(0, 0, 0, 0.8);
-  color: white;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
   font-size: 11px;
   border-radius: 4px;
   font-weight: 500;
@@ -53,21 +53,44 @@
 
 .video-watched-badge {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 20px;
-  height: 20px;
-  background: #4caf50;
-  color: white;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
+  font-weight: 700;
 }
 
+/* ── Platform badge pill (bottom-left of thumbnail) ────────────────────── */
+
+.video-platform-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* ── Info section ──────────────────────────────────────────────────────── */
+
 .video-info {
-  flex: 1;
+  padding: 10px 12px 0;
   min-width: 0;
 }
 
@@ -75,7 +98,7 @@
   font-size: 14px;
   font-weight: 500;
   line-height: 1.4;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -87,59 +110,13 @@
   color: var(--tg-theme-hint-color);
 }
 
-/* ── Action buttons column (right side) ─────────────────────────────────── */
-
-.video-card-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.video-delete-btn,
-.video-watched-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  font-size: 16px;
-  background: transparent;
-  transition: opacity 0.2s, background 0.2s;
-  opacity: 0.55;
-}
-
-.video-delete-btn:hover,
-.video-delete-btn:active {
-  opacity: 1;
-  background: rgba(255, 0, 0, 0.1);
-}
-
-.video-watched-btn {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--tg-theme-hint-color);
-}
-
-.video-watched-btn:hover,
-.video-watched-btn:active {
-  opacity: 1;
-  background: rgba(76, 175, 80, 0.15);
-  color: #4caf50;
-}
-
-.video-watched-btn--active {
-  opacity: 1;
-  color: #4caf50;
-  background: rgba(76, 175, 80, 0.12);
-}
-
 .video-meta {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
+
+/* ── Alternatives ──────────────────────────────────────────────────────── */
 
 .video-alternatives {
   display: flex;
@@ -167,32 +144,18 @@
   gap: 4px;
   padding: 3px 8px;
   border-radius: 12px;
-  border: 1px solid transparent;
+  border: 1px solid var(--tg-theme-hint-color);
   cursor: pointer;
   font-size: 11px;
   line-height: 1.3;
-  background: rgba(128, 128, 128, 0.1);
+  background: transparent;
+  color: var(--tg-theme-text-color);
   transition: transform 0.1s, opacity 0.15s;
   max-width: 100%;
 }
 
 .alt-chip:active {
   transform: scale(0.95);
-}
-
-.alt-chip--youtube {
-  background: rgba(255, 0, 0, 0.08);
-  border-color: rgba(255, 0, 0, 0.2);
-}
-
-.alt-chip--rutube {
-  background: rgba(0, 170, 170, 0.08);
-  border-color: rgba(0, 170, 170, 0.2);
-}
-
-.alt-chip--vk {
-  background: rgba(39, 135, 245, 0.08);
-  border-color: rgba(39, 135, 245, 0.2);
 }
 
 .alt-chip-icon {
@@ -211,4 +174,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 120px;
+}
+
+/* ── Bottom action row ─────────────────────────────────────────────────── */
+
+.video-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-top: 1px solid var(--tg-theme-bg-color);
+  margin-top: 8px;
+}
+
+.video-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tg-theme-hint-color);
+  background: transparent;
+  transition: color 0.15s, background 0.15s;
+}
+
+.video-action-btn:active {
+  background: var(--tg-theme-bg-color);
+}
+
+.video-action-btn + .video-action-btn {
+  border-left: 1px solid var(--tg-theme-bg-color);
+}
+
+.video-action-btn--watched-active {
+  color: var(--tg-theme-button-color);
 }
