@@ -48,11 +48,13 @@ jobs:
           script: |
             docker service update \
               --image rast53/aitovideo-backend:${{ github.sha }} \
-              --env-add OPENROUTER_API_KEY=$OPENROUTER_API_KEY \
+              --env-add YANDEX_SEARCH_API_KEY=$YANDEX_SEARCH_API_KEY \
+              --env-add YANDEX_FOLDER_ID=$YANDEX_FOLDER_ID \
               aitovideo_backend
             docker service update --image rast53/aitovideo-miniapp:${{ github.sha }} aitovideo_miniapp
             docker service update \
               --image rast53/aitovideo-backend:${{ github.sha }} \
               aitovideo_bot
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          YANDEX_SEARCH_API_KEY: ${{ secrets.YANDEX_SEARCH_API_KEY }}
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
