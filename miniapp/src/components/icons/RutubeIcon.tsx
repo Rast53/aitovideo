@@ -5,45 +5,37 @@ interface IconProps {
   className?: string;
 }
 
+// Based on official Rutube brand SVG (rutube.ru/brand)
+// Colors: #100943 (Russian violet bg), #ED143B (Red Munsell circle), white (R letterform)
 export function RutubeIcon({ size = 20, className }: IconProps) {
   const uid = useId();
-  const bgId = `rt-bg-${uid}`;
-  const waveId = `rt-wave-${uid}`;
+  const clipId = `rt-clip-${uid}`;
 
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 512 512"
+      viewBox="0 0 132 132"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
     >
       <defs>
-        <linearGradient id={bgId} x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#2ECC71" />
-          <stop offset="100%" stopColor="#1A9B52" />
-        </linearGradient>
-        <linearGradient id={waveId} x1="0" y1="256" x2="512" y2="256" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="white" stopOpacity="0.08" />
-          <stop offset="50%" stopColor="white" stopOpacity="0.15" />
-          <stop offset="100%" stopColor="white" stopOpacity="0.05" />
-        </linearGradient>
+        <clipPath id={clipId}>
+          <rect width="132" height="132" rx="24" fill="white" />
+        </clipPath>
       </defs>
-      <rect x="16" y="16" width="480" height="480" rx="96" fill={`url(#${bgId})`} />
-      <path
-        d="M16 280 Q128 240 256 270 Q384 300 496 260 L496 496 Q496 496 480 496 L32 496 Q16 496 16 480Z"
-        fill={`url(#${waveId})`}
-      />
-      <path d="M208 176 L352 256 L208 336Z" fill="white" fillOpacity="0.95" />
-      <path
-        d="M100 380 Q180 350 256 370 Q332 390 412 360"
-        stroke="white"
-        strokeWidth="6"
-        strokeOpacity="0.3"
-        strokeLinecap="round"
-        fill="none"
-      />
+      <g clipPath={`url(#${clipId})`}>
+        <rect width="132" height="132" fill="#100943" />
+        <path
+          d="M132 66.0001C168.451 66.0001 198 36.4508 198 3.05176e-05C198 -36.4508 168.451 -66 132 -66C95.5492 -66 66 -36.4508 66 3.05176e-05C66 36.4508 95.5492 66.0001 132 66.0001Z"
+          fill="#ED143B"
+        />
+        <path
+          d="M81.5361 62.9865H42.5386V47.5547H81.5361C83.814 47.5547 85.3979 47.9518 86.1928 48.6451C86.9877 49.3385 87.4801 50.6245 87.4801 52.5031V58.0441C87.4801 60.0234 86.9877 61.3094 86.1928 62.0028C85.3979 62.6961 83.814 62.9925 81.5361 62.9925V62.9865ZM84.2115 33.0059H26V99H42.5386V77.5294H73.0177L87.4801 99H106L90.0546 77.4287C95.9333 76.5575 98.573 74.756 100.75 71.7869C102.927 68.8179 104.019 64.071 104.019 57.7359V52.7876C104.019 49.0303 103.621 46.0613 102.927 43.7857C102.233 41.51 101.047 39.5307 99.362 37.7528C97.5824 36.0698 95.6011 34.8845 93.2223 34.0904C90.8435 33.3971 87.8716 33 84.2115 33V33.0059Z"
+          fill="white"
+        />
+      </g>
     </svg>
   );
 }

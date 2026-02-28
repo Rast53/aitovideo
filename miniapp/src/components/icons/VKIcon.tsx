@@ -1,15 +1,11 @@
-import { useId } from 'react';
-
 interface IconProps {
   size?: number;
   className?: string;
 }
 
+// VK Video icon: two overlapping rounded squares — blue behind-left, red in front
+// Matches VK Video app icon design
 export function VKIcon({ size = 20, className }: IconProps) {
-  const uid = useId();
-  const bgId = `vk-bg-${uid}`;
-  const shadowId = `vk-shadow-${uid}`;
-
   return (
     <svg
       width={size}
@@ -19,26 +15,12 @@ export function VKIcon({ size = 20, className }: IconProps) {
       xmlns="http://www.w3.org/2000/svg"
       className={className}
     >
-      <defs>
-        <linearGradient id={bgId} x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#5B8DEF" />
-          <stop offset="100%" stopColor="#0054AF" />
-        </linearGradient>
-        <linearGradient id={shadowId} x1="256" y1="400" x2="256" y2="512" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="black" stopOpacity="0" />
-          <stop offset="100%" stopColor="black" stopOpacity="0.12" />
-        </linearGradient>
-      </defs>
-      <circle cx="256" cy="256" r="240" fill={`url(#${bgId})`} />
-      <circle cx="256" cy="256" r="240" fill={`url(#${shadowId})`} />
-      <path
-        d="M148 192 Q148 192 192 320 Q210 368 240 320 L256 288 L272 320 Q302 368 320 320 Q364 192 364 192"
-        stroke="white"
-        strokeWidth="36"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
+      {/* Blue square — behind, offset left */}
+      <rect x="16" y="64" width="340" height="340" rx="76" fill="#2787F5" />
+      {/* Red square — front */}
+      <rect x="120" y="108" width="340" height="340" rx="76" fill="#ED1C24" />
+      {/* White play triangle — centered on red square */}
+      <path d="M258 218 L370 278 L258 338Z" fill="white" />
     </svg>
   );
 }
