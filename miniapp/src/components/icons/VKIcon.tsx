@@ -5,10 +5,12 @@ interface IconProps {
   className?: string;
 }
 
+// VK icon: official blue background + VK letterform from simple-icons
+// Brand color: #0077FF (VK official blue)
 export function VKIcon({ size = 20, className }: IconProps) {
   const uid = useId();
   const bgId = `vk-bg-${uid}`;
-  const shadowId = `vk-shadow-${uid}`;
+  const clipId = `vk-clip-${uid}`;
 
   return (
     <svg
@@ -21,24 +23,27 @@ export function VKIcon({ size = 20, className }: IconProps) {
     >
       <defs>
         <linearGradient id={bgId} x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#5B8DEF" />
-          <stop offset="100%" stopColor="#0054AF" />
+          <stop offset="0%" stopColor="#2787F5" />
+          <stop offset="100%" stopColor="#0D5FCC" />
         </linearGradient>
-        <linearGradient id={shadowId} x1="256" y1="400" x2="256" y2="512" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="black" stopOpacity="0" />
-          <stop offset="100%" stopColor="black" stopOpacity="0.12" />
-        </linearGradient>
+        <clipPath id={clipId}>
+          <rect width="512" height="512" rx="112" />
+        </clipPath>
       </defs>
-      <circle cx="256" cy="256" r="240" fill={`url(#${bgId})`} />
-      <circle cx="256" cy="256" r="240" fill={`url(#${shadowId})`} />
-      <path
-        d="M148 192 Q148 192 192 320 Q210 368 240 320 L256 288 L272 320 Q302 368 320 320 Q364 192 364 192"
-        stroke="white"
-        strokeWidth="36"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
+      <rect width="512" height="512" rx="112" fill={`url(#${bgId})`} />
+      <g clipPath={`url(#${clipId})`}>
+        {/*
+          VK logotype — scaled from 24×24 simple-icons path to 512×512.
+          Scale factor: 512/24 ≈ 21.33
+          Translation: path starts near (4,0) so we shift to center
+        */}
+        <g transform="translate(256, 256) scale(17) translate(-12, -12)">
+          <path
+            d="M6.79 7.3H4.05c.13 6.24 3.25 9.99 8.72 9.99h.31v-3.57c2.01.2 3.53 1.67 4.14 3.57h2.84c-.78-2.84-2.83-4.41-4.11-5.01 1.28-.74 3.08-2.54 3.51-4.98h-2.58c-.56 1.98-2.22 3.78-3.8 3.95V7.3H10.5v6.92c-1.6-.4-3.62-2.34-3.71-6.92Z"
+            fill="white"
+          />
+        </g>
+      </g>
     </svg>
   );
 }
