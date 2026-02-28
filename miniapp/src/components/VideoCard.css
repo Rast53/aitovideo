@@ -129,8 +129,9 @@
 
 .video-alternatives {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin-top: 6px;
 }
 
@@ -139,24 +140,27 @@
   color: var(--tg-theme-hint-color);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-}
-
-.alt-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .alt-chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 4px;
-  border-radius: 8px;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 12px;
   border: 1px solid rgba(128, 128, 128, 0.25);
   cursor: pointer;
   background: transparent;
+  color: var(--tg-theme-text-color);
   transition: transform 0.1s, opacity 0.15s;
+}
+
+.alt-chip-name {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .alt-chip:active {

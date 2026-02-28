@@ -108,18 +108,17 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
           {alternatives.length > 0 && (
             <div className="video-alternatives">
               <span className="alt-label">Также на:</span>
-              <div className="alt-chips">
-                {alternatives.map(alt => (
-                  <button
-                    key={alt.id}
-                    className="alt-chip"
-                    onClick={(e) => handleAltClick(e, alt)}
-                    title={platformNames[alt.platform]}
-                  >
-                    {platformIconComponents[alt.platform]?.(22)}
-                  </button>
-                ))}
-              </div>
+              {alternatives.map(alt => (
+                <button
+                  key={alt.id}
+                  className="alt-chip"
+                  onClick={(e) => handleAltClick(e, alt)}
+                  title={platformNames[alt.platform]}
+                >
+                  {platformIconComponents[alt.platform]?.(16)}
+                  <span className="alt-chip-name">{platformNames[alt.platform]}</span>
+                </button>
+              ))}
             </div>
           )}
         </div>
