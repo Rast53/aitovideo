@@ -34,6 +34,8 @@ services:
       - VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-}
       - YTDLP_PROXY=${YTDLP_PROXY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - YANDEX_SEARCH_API_KEY=${YANDEX_SEARCH_API_KEY:-}
+      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-}
     volumes:
       - backend-data:/app/data
     networks:

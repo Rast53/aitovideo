@@ -9,120 +9,133 @@ export interface AltCandidate extends BaseVideoInfo {
   externalId: string;
 }
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'perplexity/sonar';
+const YANDEX_SEARCH_URL = 'https://searchapi.api.cloud.yandex.net/v2/web/searchAsync';
+const YANDEX_OPERATION_URL = 'https://operation.api.cloud.yandex.net/operations/';
+const GENERIC_TITLES = new Set(['VK Video', 'Rutube Video', 'Unknown', 'Rutube']);
+
+const VK_URL_RE = /https?:\/\/(?:vk\.com\/video|vkvideo\.ru\/video)-?\d+_\d+/g;
+const RUTUBE_URL_RE = /https?:\/\/rutube\.ru\/video\/[a-f0-9]{32}/g;
+
+async function yandexSearch(query: string, apiKey: string, folderId: string): Promise<string[]> {
+  // 1. Start async search
+  const startRes = await fetch(YANDEX_SEARCH_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Api-Key ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: { searchType: 'SEARCH_TYPE_RU', queryText: query },
+      folderId,
+      responseFormat: 'FORMAT_HTML',
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (!startRes.ok) {
+    serviceLogger.warn({ status: startRes.status, query }, 'Yandex Search API start failed');
+    return [];
+  }
+
+  const operation = (await startRes.json()) as { id?: string };
+  if (!operation.id) return [];
+
+  // 2. Poll for result (max 10s)
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+
+    const pollRes = await fetch(`${YANDEX_OPERATION_URL}${operation.id}`, {
+      headers: { 'Authorization': `Api-Key ${apiKey}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+
+    if (!pollRes.ok) continue;
+
+    const result = (await pollRes.json()) as {
+      done?: boolean;
+      response?: { rawData?: string };
+    };
+
+    if (!result.done) continue;
+
+    const rawData = result.response?.rawData;
+    if (!rawData) return [];
+
+    const html = Buffer.from(rawData, 'base64').toString('utf-8');
+
+    // Extract clean URLs
+    const found = new Set<string>();
+    for (const match of html.matchAll(VK_URL_RE)) {
+      // Strip trailing junk after the ID
+      const clean = match[0].match(/https?:\/\/(?:vk\.com\/video|vkvideo\.ru\/video)-?\d+_\d+/)?.[0];
+      if (clean) found.add(clean);
+    }
+    for (const match of html.matchAll(RUTUBE_URL_RE)) {
+      found.add(match[0]);
+    }
+
+    return [...found].slice(0, 6);
+  }
+
+  serviceLogger.warn({ query }, 'Yandex Search API timed out');
+  return [];
+}
+
+async function resolveCandidate(rawUrl: string): Promise<AltCandidate | null> {
+  try {
+    const vkParsed = parseVkVideoUrl(rawUrl);
+    if (vkParsed) {
+      const [ownerId, videoId] = vkParsed.externalId.split('_');
+      if (!ownerId || !videoId) return null;
+      const info = await getVkVideoInfo(ownerId, videoId);
+      if (GENERIC_TITLES.has(info.title)) return null;
+      return { platform: 'vk', externalId: vkParsed.externalId, ...info };
+    }
+
+    const rutubeParsed = parseRutubeUrl(rawUrl);
+    if (rutubeParsed) {
+      const info = await getRutubeInfo(rutubeParsed.externalId);
+      if (GENERIC_TITLES.has(info.title)) return null;
+      return { platform: 'rutube', externalId: rutubeParsed.externalId, ...info };
+    }
+  } catch (err) {
+    serviceLogger.warn(
+      { url: rawUrl, error: err instanceof Error ? err.message : String(err) },
+      'Failed to resolve candidate metadata'
+    );
+  }
+  return null;
+}
 
 export async function searchAlternatives(
   title: string,
-  channel: string
+  _channel: string
 ): Promise<AltCandidate[]> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    serviceLogger.warn('OPENROUTER_API_KEY is not set — skipping AI alt search');
+  const apiKey = process.env.YANDEX_SEARCH_API_KEY;
+  const folderId = process.env.YANDEX_FOLDER_ID;
+
+  if (!apiKey || !folderId) {
+    serviceLogger.warn('YANDEX_SEARCH_API_KEY or YANDEX_FOLDER_ID not set — skipping alt search');
     return [];
   }
 
-  try {
-    const res = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a video search assistant. Find video URLs on VK and Rutube. Return ONLY direct video URLs, one per line, no other text.',
-          },
-          {
-            role: 'user',
-            content: `Find this video on vk.com and rutube.ru: "${title}" by ${channel}. Return direct video URLs only, one per line.`,
-          },
-        ],
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
+  serviceLogger.info({ title }, 'Starting Yandex alt search');
 
-    if (!res.ok) {
-      serviceLogger.warn(
-        { status: res.status, statusText: res.statusText },
-        'OpenRouter API returned non-OK status'
-      );
-      return [];
-    }
+  // Search VK and Rutube in parallel
+  const [vkUrls, rutubeUrls] = await Promise.all([
+    yandexSearch(`${title} site:vk.com/video`, apiKey, folderId),
+    yandexSearch(`${title} site:rutube.ru/video`, apiKey, folderId),
+  ]);
 
-    const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
+  const allUrls = [...vkUrls, ...rutubeUrls];
+  serviceLogger.info(
+    { title, vkCount: vkUrls.length, rutubeCount: rutubeUrls.length },
+    'Yandex URLs found'
+  );
 
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) {
-      serviceLogger.warn('OpenRouter response has no content');
-      return [];
-    }
+  const results = await Promise.all(allUrls.map(resolveCandidate));
+  const candidates = results.filter((r): r is AltCandidate => r !== null);
 
-    serviceLogger.info({ content }, 'OpenRouter raw response');
-
-    const lines = content
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.startsWith('http'));
-
-    const candidates: AltCandidate[] = [];
-
-    for (const line of lines) {
-      try {
-        const vkParsed = parseVkVideoUrl(line);
-        if (vkParsed) {
-          const [ownerId, videoId] = vkParsed.externalId.split('_');
-          if (ownerId && videoId) {
-            const info = await getVkVideoInfo(ownerId, videoId);
-            candidates.push({
-              platform: 'vk',
-              externalId: vkParsed.externalId,
-              title: info.title,
-              channelName: info.channelName,
-              thumbnailUrl: info.thumbnailUrl,
-              duration: info.duration,
-            });
-          }
-          continue;
-        }
-
-        const rutubeParsed = parseRutubeUrl(line);
-        if (rutubeParsed) {
-          const info = await getRutubeInfo(rutubeParsed.externalId);
-          candidates.push({
-            platform: 'rutube',
-            externalId: rutubeParsed.externalId,
-            title: info.title,
-            channelName: info.channelName,
-            thumbnailUrl: info.thumbnailUrl,
-            duration: info.duration,
-          });
-          continue;
-        }
-      } catch (err) {
-        serviceLogger.warn(
-          { url: line, error: err instanceof Error ? err.message : String(err) },
-          'Failed to fetch info for AI-found URL'
-        );
-      }
-    }
-
-    serviceLogger.info(
-      { count: candidates.length, title },
-      'AI alt search completed'
-    );
-    return candidates;
-  } catch (err) {
-    serviceLogger.error(
-      { error: err instanceof Error ? err.message : String(err) },
-      'AI alt search failed'
-    );
-    return [];
-  }
+  serviceLogger.info({ title, count: candidates.length }, 'Alt search completed');
+  return candidates;
 }
