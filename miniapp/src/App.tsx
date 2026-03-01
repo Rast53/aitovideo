@@ -105,11 +105,6 @@ function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>Видео</h1>
-        {user && <span className="user-name">{user.firstName || user.username}</span>}
-      </header>
-
       <TabBar activeTab={activeTab} onChange={setActiveTab} />
 
       <main className="app-content">

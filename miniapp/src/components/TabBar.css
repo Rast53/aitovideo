@@ -1,6 +1,6 @@
 .tab-bar {
   position: sticky;
-  top: 57px;
+  top: 0;
   z-index: 90;
   display: flex;
   background: var(--tg-theme-bg-color);
