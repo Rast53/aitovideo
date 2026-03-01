@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 import { Player } from './components/Player';
+import { TabBar } from './components/TabBar';
+import type { Tab } from './components/TabBar';
 import { VideoList } from './components/VideoList';
 import type { AppUser, Video } from './types/api';
 import './App.css';
@@ -15,6 +17,13 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [user, setUser] = useState<AppUser | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('videos');
+
+  const visibleVideos = useMemo(() => {
+    if (activeTab === 'videos') return videos.filter((v) => !v.is_watched);
+    if (activeTab === 'watched') return videos.filter((v) => v.is_watched);
+    return [];
+  }, [videos, activeTab]);
 
   // Initialize Telegram WebApp
   useEffect(() => {
@@ -101,13 +110,16 @@ function App() {
         {user && <span className="user-name">{user.firstName || user.username}</span>}
       </header>
 
+      <TabBar activeTab={activeTab} onChange={setActiveTab} />
+
       <main className="app-content">
         <VideoList
-          videos={videos}
+          videos={visibleVideos}
           loading={loading}
           onVideoClick={handleVideoClick}
           onDelete={handleDelete}
           onMarkWatched={handleMarkWatched}
+          activeTab={activeTab}
         />
       </main>
 

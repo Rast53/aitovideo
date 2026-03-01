@@ -1,0 +1,31 @@
+.tab-bar {
+  position: sticky;
+  top: 57px;
+  z-index: 90;
+  display: flex;
+  background: var(--tg-theme-bg-color);
+  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+}
+
+.tab-bar__item {
+  flex: 1;
+  padding: 12px 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--tg-theme-hint-color);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-bar__item:active {
+  opacity: 0.8;
+}
+
+.tab-bar__item--active {
+  color: var(--tg-theme-button-color);
+  border-bottom-color: var(--tg-theme-button-color);
+}
