@@ -5,6 +5,27 @@
   padding: 12px 16px 16px;
 }
 
+@media (orientation: landscape) {
+  .video-list {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .video-list .video-title {
+    font-size: 13px;
+  }
+
+  .video-list .video-channel {
+    font-size: 11px;
+  }
+
+  .video-list .video-action-btn {
+    font-size: 12px;
+    padding: 8px 6px;
+  }
+}
+
 .video-list-empty {
   display: flex;
   flex-direction: column;
