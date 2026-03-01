@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import db from '../../db.js';
 import { UserModel } from '../../models/user.js';
+import { apiLogger } from '../../logger.js';
 import type {
   ErrorResponse,
   GetProgressResponse,
@@ -11,7 +12,27 @@ import type {
 
 const router = Router();
 
-// Get progress for a specific video
+/**
+ * Resolve the canonical video id for progress storage.
+ * If video has parent_id and the parent row still exists → return parent_id.
+ * Otherwise (no parent, or parent deleted) → return the video's own id.
+ */
+function getCanonicalId(videoId: number): number {
+  const row = db
+    .prepare('SELECT parent_id FROM videos WHERE id = ?')
+    .get(videoId) as { parent_id: number | null } | undefined;
+
+  if (!row?.parent_id) return videoId;
+
+  const parentExists = db
+    .prepare('SELECT id FROM videos WHERE id = ?')
+    .get(row.parent_id) as { id: number } | undefined;
+
+  if (!parentExists) return videoId;
+
+  return row.parent_id;
+}
+
 router.get(
   '/:video_id',
   (
@@ -38,19 +59,20 @@ router.get(
         return;
       }
 
+      const canonicalId = getCanonicalId(videoId);
+
       const progress = db
         .prepare('SELECT * FROM video_progress WHERE user_id = ? AND video_id = ?')
-        .get(user.id, videoId) as VideoProgress | undefined;
+        .get(user.id, canonicalId) as VideoProgress | undefined;
 
       res.json({ progress: progress ?? null });
     } catch (error) {
-      console.error('Get progress error:', error);
+      apiLogger.error({ err: error }, 'Get progress error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 );
 
-// Save (upsert) progress for a video
 router.post(
   '/',
   (
@@ -83,17 +105,17 @@ router.post(
         return;
       }
 
-      // Verify the video exists and belongs to this user before touching progress.
-      // Prevents FOREIGN KEY constraint errors if video was deleted while playing.
+      // Ownership check uses the ORIGINAL video_id (user owns the child video)
       const videoExists = db
         .prepare('SELECT id FROM videos WHERE id = ? AND user_id = ?')
         .get(video_id, user.id);
 
       if (!videoExists) {
-        // Video gone (deleted) — silently ignore, no progress to save
         res.json({ progress: { id: 0, user_id: user.id, video_id, position_seconds: Math.floor(position_seconds), updated_at: new Date().toISOString() } as VideoProgress });
         return;
       }
+
+      const canonicalId = getCanonicalId(video_id);
 
       db.prepare(`
         INSERT INTO video_progress (user_id, video_id, position_seconds, updated_at)
@@ -101,15 +123,15 @@ router.post(
         ON CONFLICT(user_id, video_id) DO UPDATE SET
           position_seconds = excluded.position_seconds,
           updated_at = CURRENT_TIMESTAMP
-      `).run(user.id, video_id, Math.floor(position_seconds));
+      `).run(user.id, canonicalId, Math.floor(position_seconds));
 
       const progress = db
         .prepare('SELECT * FROM video_progress WHERE user_id = ? AND video_id = ?')
-        .get(user.id, video_id) as VideoProgress;
+        .get(user.id, canonicalId) as VideoProgress;
 
       res.json({ progress });
     } catch (error) {
-      console.error('Save progress error:', error);
+      apiLogger.error({ err: error }, 'Save progress error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
