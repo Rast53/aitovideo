@@ -35,3 +35,4 @@ Telegram Bot ──▶ Backend (Express) ──▶ SQLite
 ```
 Full architecture, patterns, and deploy details: **`.openclaw/ARCHITECTURE.md`**
 Constraints and red lines: **`.openclaw/CONSTRAINTS.md`**
+UI brand guide (colors, spacing, components): **`.openclaw/BRAND.md`** — read before any UI work

@@ -73,6 +73,10 @@ apiLogger.error({ err, userId }, 'Something failed');
 - ✅ Добавлять колонки можно (nullable по умолчанию)
 - ✅ UI изменения miniapp — свободно
 
+## Brand Guide (UI)
+Все UI-изменения в miniapp следуют `.openclaw/BRAND.md`.
+**Перед любой UI-задачей:** прочитать BRAND.md — цвета, отступы, border-radius, компоненты, запрещённые паттерны.
+
 ## Human review обязателен при
 - Изменении схемы БД (удаление/переименование)
 - Изменении деплой-конфигурации (Swarm stack)
