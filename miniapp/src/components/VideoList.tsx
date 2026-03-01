@@ -1,4 +1,5 @@
 import { VideoCard } from './VideoCard';
+import type { Tab } from './TabBar';
 import type { Video } from '../types/api';
 import './VideoList.css';
 
@@ -8,6 +9,7 @@ interface VideoListProps {
   onDelete?: (id: number) => void;
   onMarkWatched?: (id: number, isWatched: boolean) => void;
   loading: boolean;
+  activeTab?: Tab;
 }
 
 function SkeletonCard() {
@@ -26,12 +28,19 @@ function SkeletonCard() {
   );
 }
 
+const EMPTY_STATE: Record<Tab, { icon: string; title: string; message: string }> = {
+  videos: { icon: '📺', title: 'Нет видео', message: 'Отправь ссылку боту, и она появится здесь' },
+  watched: { icon: '✅', title: 'Нет просмотренных', message: 'Отмечай видео как просмотренные, и они появятся здесь' },
+  subscriptions: { icon: '🔔', title: 'Подписки появятся здесь', message: 'Скоро тут можно будет подписываться на каналы' },
+};
+
 export function VideoList({
   videos,
   onVideoClick,
   onDelete,
   onMarkWatched,
-  loading
+  loading,
+  activeTab = 'videos'
 }: VideoListProps) {
   if (loading) {
     return (
@@ -45,11 +54,12 @@ export function VideoList({
   }
 
   if (!videos || videos.length === 0) {
+    const empty = EMPTY_STATE[activeTab];
     return (
       <div className="video-list-empty">
-        <div className="empty-icon">📺</div>
-        <h3>Нет видео</h3>
-        <p>Отправь ссылку боту, и она появится здесь</p>
+        <div className="empty-icon">{empty.icon}</div>
+        <h3>{empty.title}</h3>
+        <p>{empty.message}</p>
       </div>
     );
   }
