@@ -155,7 +155,7 @@
 }
 
 .resume-modal {
-  background: var(--tg-theme-bg-color, #1e1e1e);
+  background: var(--tg-theme-bg-color);
   border-radius: 16px;
   padding: 28px 24px 24px;
   display: flex;
@@ -164,7 +164,6 @@
   gap: 16px;
   max-width: 320px;
   width: 100%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
 .resume-modal__icon {
@@ -174,14 +173,14 @@
 
 .resume-modal__text {
   font-size: 16px;
-  color: var(--tg-theme-text-color, #fff);
+  color: var(--tg-theme-text-color);
   text-align: center;
   margin: 0;
   line-height: 1.5;
 }
 
 .resume-modal__text strong {
-  color: var(--tg-theme-button-color, #2196f3);
+  color: var(--tg-theme-button-color);
 }
 
 /* ── Resume progress bar ──────────────────────────────────────────────── */
@@ -190,14 +189,14 @@
   width: 100%;
   height: 3px;
   border-radius: 2px;
-  background: var(--tg-theme-secondary-bg-color, rgba(255, 255, 255, 0.15));
+  background: var(--tg-theme-secondary-bg-color);
   overflow: hidden;
 }
 
 .resume-modal__progress-fill {
   height: 100%;
   border-radius: 2px;
-  background: var(--tg-theme-button-color, #2196f3);
+  background: var(--tg-theme-button-color);
   transition: width 0.3s ease;
 }
 
@@ -213,7 +212,7 @@
   border-radius: 10px;
   font-size: 15px;
   font-weight: 600;
-  transition: opacity 0.15s, transform 0.1s;
+  transition: opacity 0.1s, transform 0.1s;
 }
 
 .resume-modal__btn:active {
@@ -222,11 +221,11 @@
 }
 
 .resume-modal__btn--primary {
-  background: var(--tg-theme-button-color, #2196f3);
-  color: var(--tg-theme-button-text-color, #fff);
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
 }
 
 .resume-modal__btn--secondary {
-  background: var(--tg-theme-secondary-bg-color, #333);
-  color: var(--tg-theme-text-color, #fff);
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-text-color);
 }
