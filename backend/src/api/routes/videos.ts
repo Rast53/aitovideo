@@ -263,7 +263,6 @@ function durationSimilarity(
 const CHANNEL_SIM_THRESHOLD = 0.5;
 const TITLE_OVERLAP_THRESHOLD = 0.55;
 const DURATION_DIFF_HARD_LIMIT = 0.05;
-const MAX_ALTERNATIVES = 2;
 
 async function findAlternatives(
   query: string,
@@ -305,9 +304,9 @@ async function findAlternatives(
       '[DEBUG] Alt candidates scored'
     );
 
-    let addedCount = 0;
+    const addedPerPlatform = new Set<string>();
     for (const { alt, chSim, titleOvr, durSim } of scored) {
-      if (addedCount >= MAX_ALTERNATIVES) break;
+      if (addedPerPlatform.has(alt.platform)) continue;
       const isChannelOk = chSim >= CHANNEL_SIM_THRESHOLD;
       const isTitleOk = titleOvr >= TITLE_OVERLAP_THRESHOLD;
 
@@ -349,7 +348,7 @@ async function findAlternatives(
         duration: alt.duration,
         parentId
       });
-      addedCount++;
+      addedPerPlatform.add(alt.platform);
       apiLogger.info(
         {
           title: alt.title,
