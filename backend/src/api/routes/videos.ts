@@ -261,7 +261,7 @@ function durationSimilarity(
 // ─── AltSearch ─────────────────────────────────────────────────────────────
 
 const CHANNEL_SIM_THRESHOLD = 0.5;
-const TITLE_OVERLAP_THRESHOLD = 0.65;
+const TITLE_OVERLAP_THRESHOLD = 0.55;
 const DURATION_DIFF_HARD_LIMIT = 0.05;
 const MAX_ALTERNATIVES = 2;
 
@@ -298,10 +298,10 @@ async function findAlternatives(
       const isChannelOk = chSim >= CHANNEL_SIM_THRESHOLD;
       const isTitleOk = titleOvr >= TITLE_OVERLAP_THRESHOLD;
 
-      if (!isChannelOk || !isTitleOk) {
+      if (!isTitleOk) {
         apiLogger.debug(
           { title: alt.title, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2), durSim: durSim.toFixed(2) },
-          'Skipping alt: below thresholds'
+          'Skipping alt: title below threshold'
         );
         continue;
       }
