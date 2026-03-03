@@ -292,6 +292,19 @@ async function findAlternatives(
 
     scored.sort((a, b) => b.score - a.score);
 
+    // DEBUG: log all scored candidates
+    apiLogger.info(
+      { parentId, candidates: scored.map(s => ({
+        title: (s.alt.title ?? '').slice(0, 40),
+        platform: s.alt.platform,
+        chSim: +s.chSim.toFixed(2),
+        titleOvr: +s.titleOvr.toFixed(2),
+        durSim: +s.durSim.toFixed(2),
+        score: +s.score.toFixed(2),
+      })) },
+      '[DEBUG] Alt candidates scored'
+    );
+
     let addedCount = 0;
     for (const { alt, chSim, titleOvr, durSim } of scored) {
       if (addedCount >= MAX_ALTERNATIVES) break;
