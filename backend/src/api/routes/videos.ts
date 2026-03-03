@@ -260,9 +260,10 @@ function durationSimilarity(
 
 // ─── AltSearch ─────────────────────────────────────────────────────────────
 
-const CHANNEL_SIM_THRESHOLD = 0.45;
-const TITLE_OVERLAP_THRESHOLD = 0.4;
+const CHANNEL_SIM_THRESHOLD = 0.5;
+const TITLE_OVERLAP_THRESHOLD = 0.65;
 const DURATION_DIFF_HARD_LIMIT = 0.05;
+const MAX_ALTERNATIVES = 2;
 
 async function findAlternatives(
   query: string,
@@ -291,11 +292,13 @@ async function findAlternatives(
 
     scored.sort((a, b) => b.score - a.score);
 
+    let addedCount = 0;
     for (const { alt, chSim, titleOvr, durSim } of scored) {
+      if (addedCount >= MAX_ALTERNATIVES) break;
       const isChannelOk = chSim >= CHANNEL_SIM_THRESHOLD;
       const isTitleOk = titleOvr >= TITLE_OVERLAP_THRESHOLD;
 
-      if (!isChannelOk && !isTitleOk) {
+      if (!isChannelOk || !isTitleOk) {
         apiLogger.debug(
           { title: alt.title, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2), durSim: durSim.toFixed(2) },
           'Skipping alt: below thresholds'
@@ -333,6 +336,7 @@ async function findAlternatives(
         duration: alt.duration,
         parentId
       });
+      addedCount++;
       apiLogger.info(
         {
           title: alt.title,
