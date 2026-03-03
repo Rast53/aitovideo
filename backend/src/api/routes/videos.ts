@@ -241,24 +241,28 @@ function titleOverlapScore(original: string, candidate: string): number {
 
 /**
  * Duration similarity: linear score based on relative difference.
- * Returns 1.0 when either duration is unknown (null), 0 when difference > 30%.
+ * - If originalDuration is null → 1.0 (nothing to compare against).
+ * - If originalDuration is known but candidateDuration is null → 0 (reject).
+ * - When both known: hard cutoff at 5 % difference (returns 0), otherwise
+ *   linear score 1 → 0 within the 0–5 % band.
  */
 function durationSimilarity(
   originalDuration: number | null,
   candidateDuration: number | null
 ): number {
-  if (originalDuration == null || candidateDuration == null) return 1.0;
+  if (originalDuration == null) return 1.0;
+  if (candidateDuration == null) return 0;
   if (originalDuration === 0) return candidateDuration === 0 ? 1.0 : 0;
   const diff = Math.abs(originalDuration - candidateDuration) / originalDuration;
-  if (diff > 0.3) return 0;
-  return 1 - diff / 0.3;
+  if (diff > 0.05) return 0;
+  return 1 - diff / 0.05;
 }
 
 // ─── AltSearch ─────────────────────────────────────────────────────────────
 
 const CHANNEL_SIM_THRESHOLD = 0.45;
 const TITLE_OVERLAP_THRESHOLD = 0.4;
-const DURATION_DIFF_HARD_LIMIT = 0.3;
+const DURATION_DIFF_HARD_LIMIT = 0.05;
 
 async function findAlternatives(
   query: string,
