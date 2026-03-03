@@ -138,7 +138,7 @@ router.post(
 
       // If YouTube, find alternatives in background
       if (parsed.platform === 'youtube') {
-        void findAlternatives(videoInfo.title, videoInfo.channelName, user.id, video.id);
+        void findAlternatives(videoInfo.title, videoInfo.channelName, videoInfo.duration, user.id, video.id);
       }
 
       res.status(201).json({ video });
@@ -239,34 +239,74 @@ function titleOverlapScore(original: string, candidate: string): number {
   return matches / origWords.length;
 }
 
+/**
+ * Duration similarity: linear score based on relative difference.
+ * Returns 1.0 when either duration is unknown (null), 0 when difference > 30%.
+ */
+function durationSimilarity(
+  originalDuration: number | null,
+  candidateDuration: number | null
+): number {
+  if (originalDuration == null || candidateDuration == null) return 1.0;
+  if (originalDuration === 0) return candidateDuration === 0 ? 1.0 : 0;
+  const diff = Math.abs(originalDuration - candidateDuration) / originalDuration;
+  if (diff > 0.3) return 0;
+  return 1 - diff / 0.3;
+}
+
 // ─── AltSearch ─────────────────────────────────────────────────────────────
 
 const CHANNEL_SIM_THRESHOLD = 0.45;
 const TITLE_OVERLAP_THRESHOLD = 0.4;
+const DURATION_DIFF_HARD_LIMIT = 0.3;
 
-async function findAlternatives(query: string, originalChannel: string, userId: number, parentId: number) {
+async function findAlternatives(
+  query: string,
+  originalChannel: string,
+  originalDuration: number | null,
+  userId: number,
+  parentId: number
+) {
   try {
     apiLogger.info({ query, parentId }, 'Starting background search for alternatives');
 
     const allFound = await searchAlternatives(query, originalChannel);
 
-    // Score and sort candidates
     const scored = allFound.map((alt) => {
       const chSim = channelSimilarity(originalChannel, alt.channelName || '');
       const titleOvr = titleOverlapScore(query, alt.title || '');
-      return { alt, chSim, titleOvr, score: chSim * 0.4 + titleOvr * 0.6 };
+      const durSim = durationSimilarity(originalDuration, alt.duration);
+      return {
+        alt,
+        chSim,
+        titleOvr,
+        durSim,
+        score: titleOvr * 0.35 + chSim * 0.25 + durSim * 0.4,
+      };
     });
 
     scored.sort((a, b) => b.score - a.score);
 
-    for (const { alt, chSim, titleOvr } of scored) {
+    for (const { alt, chSim, titleOvr, durSim } of scored) {
       const isChannelOk = chSim >= CHANNEL_SIM_THRESHOLD;
       const isTitleOk = titleOvr >= TITLE_OVERLAP_THRESHOLD;
 
       if (!isChannelOk && !isTitleOk) {
         apiLogger.debug(
-          { title: alt.title, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2) },
+          { title: alt.title, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2), durSim: durSim.toFixed(2) },
           'Skipping alt: below thresholds'
+        );
+        continue;
+      }
+
+      if (
+        originalDuration != null &&
+        alt.duration != null &&
+        Math.abs(originalDuration - alt.duration) / originalDuration > DURATION_DIFF_HARD_LIMIT
+      ) {
+        apiLogger.debug(
+          { title: alt.title, originalDuration, candidateDuration: alt.duration },
+          'Skipping alt: duration mismatch'
         );
         continue;
       }
@@ -290,7 +330,13 @@ async function findAlternatives(query: string, originalChannel: string, userId: 
         parentId
       });
       apiLogger.info(
-        { title: alt.title, platform: alt.platform, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2) },
+        {
+          title: alt.title,
+          platform: alt.platform,
+          chSim: chSim.toFixed(2),
+          titleOvr: titleOvr.toFixed(2),
+          durSim: durSim.toFixed(2),
+        },
         'Added alternative video'
       );
     }
