@@ -19,6 +19,16 @@ Backend serves API + bot; Mini App is the UI inside Telegram.
 | `./scripts/deploy.sh` | Deploy stack to Swarm |
 | `./scripts/logs.sh` | Tail service logs |
 | `./scripts/health.sh` | Health-check endpoints |
+| `./scripts/watch-agent.sh` | Monitor agent progress (progress.md → Telegram) |
+| `./scripts/watch-pr.sh` | Monitor CI + auto-merge PR |
+
+## Task Protocols (M+ tasks)
+Resumable task context lives in `.cursor/protocols/TASK-N/`:
+- `context.md` — project context for the agent
+- `plan.md` — step-by-step plan
+- `progress.md` — status (`IN_PROGRESS` / `SUCCESS` / `HALT_BLOCKING` / `HALT_FAILURE`) + completed steps
+
+Read `.cursor/WORKFLOW.md` for the full agent policy (prompts, stall timeout, PR rules).
 
 ## Constraints
 1. **DB schema is sacred** — never drop tables/columns without a migration; never change `videoId` type or DB file path.

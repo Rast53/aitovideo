@@ -1,70 +1,79 @@
 ---
-# .cursor/WORKFLOW.md — Agent policy for AitoVideo
-# Version: 1.0 (2026-03-05)
-
 agent:
-  max_turns: 20
-  stall_timeout_min: 5        # kill agent if no activity > 5 min
-  approval_policy: auto       # auto-approve shell commands in workspace
-  branch_pattern: "{type}/#{issue}-{slug}"   # e.g. fix/#45-mini-app-hang
-  pr_prefix: "[auto]"
+  max_turns: 30
+  stall_timeout_min: 10        # убить агента если нет активности > 10 мин
+  approval_policy: auto        # auto-approve shell commands
+branch_pattern: "{type}/#{issue}-{slug}"
+pr_prefix: "[auto]"
 ---
 
-# AitoVideo — Agent Prompt Template
+# AitoVideo — Agent Workflow Policy
 
-## Context (read first)
-1. Read `AGENTS.md` — stack, commands, key constraints
-2. Read `.openclaw/ARCHITECTURE.md` — module map, patterns, deploy
-3. Read `.openclaw/CONSTRAINTS.md` — red lines (DB schema, API format, bot commands)
-4. If `.openclaw/BRAND.md` exists and task touches UI — read it too
+## Старт каждой задачи
 
-## Protocol (M+ tasks)
-- Read `.cursor/protocols/TASK-{{ issue.id }}/{context,plan,progress}.md` if exists
-- Follow `plan.md` step by step
-- After each step: update `progress.md` (mark done, set next step), then commit
-- If blocked on a decision: set `status: HALT_BLOCKING` in `progress.md`, describe the question, stop
-- On completion: set `status: SUCCESS` in `progress.md`
-- Commit after each completed step: `feat: step K of #{{ issue.id }} — description`
+1. Прочитать `AGENTS.md` — стек, команды, ограничения
+2. Прочитать `.openclaw/CONSTRAINTS.md` — красные линии
+3. Если есть протокол — прочитать `.cursor/protocols/TASK-N/{context,plan,progress}.md`
 
-### progress.md format
-```markdown
-## Status: IN_PROGRESS | SUCCESS | HALT_BLOCKING | HALT_FAILURE
+## Формула промпта (XS/S задачи)
 
-### Completed steps
-- [x] Step 1 — commit abc1234
-
-### Next step
-Step 2: ...
-
-### Blocking question (if HALT_BLOCKING)
-...
+```
+Context: Read AGENTS.md and .openclaw/CONSTRAINTS.md first.
+Task: [описание задачи]
+Verification: Run ./scripts/check.sh after all changes.
+Branch: fix/#N-name or feat/#N-name
+PR: [auto] fix: описание (#N)
 ```
 
-## Verification (mandatory before PR)
-1. Run `./scripts/check.sh` — must pass with no errors
-2. No `console.log` — use pino loggers (`apiLogger`, `botLogger`, `serviceLogger`)
-3. No hardcoded secrets — all tokens from `.env`
-4. DB changes only via `backend/src/models/migrations/`
-5. If task is a retry (attempt >= 1): state what was done in previous attempt and what changed
+## Формула промпта (M+ задачи с протоколом)
 
-## Output
-- Branch: `{{ branch_pattern }}` (e.g. `fix/#45-mini-app-hang`)
-- PR title: `[auto] fix: description (#{{ issue.id }})` or `[auto] feat: ...`
-- PR body must include:
-  - Closes #{{ issue.id }}
-  - Checklist of plan items with file:line references (if plan exists)
-  - `./scripts/check.sh` — ✅ passed
+```
+Context: Read AGENTS.md and .openclaw/ARCHITECTURE.md first.
+Protocol: Read .cursor/protocols/TASK-N/{context,plan,progress}.md for task protocol.
+Task:
+  - Follow plan.md step by step
+  - After each step: update progress.md (mark done, set next step), then commit
+  - If blocked: set status HALT_BLOCKING in progress.md, describe question, stop
+  - On completion: set status SUCCESS in progress.md
+Git: Commit after each step — "feat: step K of #N — description"
+Verification: Run ./scripts/check.sh after each step.
+Branch: feat/#N-name or fix/#N-name
+PR: [auto] feat: description (#N), include plan checklist in body
+```
 
-## Retry / Continuation
-- `attempt: null` — first run, use full prompt above
-- `attempt >= 1` — continuation: read `.cursor/protocols/TASK-{{ issue.id }}/progress.md`
-  - Continue from "Next step" — do NOT restart from scratch
-  - Check git log to verify what was actually committed in previous attempts
-  - Update `progress.md` as you complete each remaining step
+## После запуска агента — сразу ставить мониторы
 
-## Constraints (summary — full list in .openclaw/CONSTRAINTS.md)
-- ❌ Never drop DB tables/columns without migration
-- ❌ Never change `/api/videos` response format without versioning
-- ❌ Never use `console.log`
-- ❌ Never hardcode tokens/keys
-- ✅ Human review required: DB schema changes, deploy config changes, new env vars
+```bash
+# 1. watch-agent (сразу, с PID агента)
+./scripts/watch-agent.sh <TASK_N> $(pwd) $AGENT_PID --install
+
+# 2. watch-pr (после создания PR)
+./scripts/watch-pr.sh <PR_N> Rast53/aitovideo --install
+```
+
+## Скрипты
+
+| Команда | Что делает |
+|---------|-----------|
+| `./scripts/check.sh` | TypeScript typecheck + lint |
+| `./scripts/build.sh` | Build + push Docker images |
+| `./scripts/deploy.sh` | Deploy to Swarm + health check |
+| `./scripts/logs.sh` | Tail сервисных логов |
+| `./scripts/health.sh` | Health-check всех эндпоинтов |
+| `./scripts/watch-agent.sh` | Монитор прогресса агента (progress.md → Telegram) |
+| `./scripts/watch-pr.sh` | Монитор CI + автомерж PR |
+
+## Terminal states (progress.md)
+
+- `IN_PROGRESS` — работа идёт
+- `SUCCESS` — всё выполнено, PR создан
+- `HALT_BLOCKING` — нужно решение от человека (describe in ### Blocking question)
+- `HALT_FAILURE` — агент упал, ручная диагностика
+
+## Правила
+
+- Никаких `console.log` — только `logger.ts` (pino)
+- Никаких хардкоженных секретов
+- Схема БД — священная (не дропать таблицы/колонки без миграции)
+- ES modules — импорты с `.js` расширением
+- При HALT_BLOCKING — останавливаться, не угадывать
