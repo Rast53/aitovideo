@@ -8,6 +8,7 @@ interface VideoListProps {
   onVideoClick?: (video: Video) => void;
   onDelete?: (id: number) => void;
   onMarkWatched?: (id: number, isWatched: boolean) => void;
+  onSearchAlt?: (id: number) => Promise<boolean>;
   loading: boolean;
   activeTab?: Tab;
 }
@@ -39,6 +40,7 @@ export function VideoList({
   onVideoClick,
   onDelete,
   onMarkWatched,
+  onSearchAlt,
   loading,
   activeTab = 'videos'
 }: VideoListProps) {
@@ -78,6 +80,7 @@ export function VideoList({
             onClick={onVideoClick}
             onDelete={onDelete}
             onMarkWatched={onMarkWatched}
+            onSearchAlt={onSearchAlt}
           />
         );
       })}

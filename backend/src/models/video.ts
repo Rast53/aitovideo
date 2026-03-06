@@ -1,5 +1,5 @@
 import db from '../db.js';
-import type { CreateVideoInput, Video, VideoPlatform } from '../types/video.js';
+import type { AltSearchStatus, CreateVideoInput, Video, VideoPlatform } from '../types/video.js';
 
 interface VideoIdRow {
   id: number;
@@ -87,6 +87,27 @@ export const VideoModel = {
     `);
 
     return Boolean(stmt.get(userId, platform, externalId) as VideoIdRow | undefined);
+  },
+
+  updateAltSearchStatus(id: number, status: AltSearchStatus): void {
+    db.prepare('UPDATE videos SET alt_search_status = ? WHERE id = ?').run(status, id);
+  },
+
+  findYouTubeNeedingAltRetry(): Video[] {
+    return db.prepare(`
+      SELECT * FROM videos
+      WHERE platform = 'youtube'
+        AND parent_id IS NULL
+        AND alt_search_status IN ('pending', 'error')
+      ORDER BY created_at ASC
+      LIMIT 20
+    `).all() as Video[];
+  },
+
+  hasAlternatives(videoId: number): boolean {
+    return Boolean(
+      db.prepare('SELECT 1 FROM videos WHERE parent_id = ? LIMIT 1').get(videoId)
+    );
   }
 };
 
