@@ -5,7 +5,8 @@ import type {
   GetProgressResponse,
   GetVideosResponse,
   MarkAsWatchedResponse,
-  SaveProgressResponse
+  SaveProgressResponse,
+  SearchAltResponse
 } from './types/api';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
@@ -62,6 +63,11 @@ export const api = {
     fetchWithAuth<SaveProgressResponse>('/api/progress', {
       method: 'POST',
       body: JSON.stringify({ video_id: videoId, position_seconds: positionSeconds })
+    }),
+
+  searchAlternatives: (videoId: number): Promise<SearchAltResponse> =>
+    fetchWithAuth<SearchAltResponse>(`/api/videos/${videoId}/search-alt`, {
+      method: 'POST'
     })
 };
 

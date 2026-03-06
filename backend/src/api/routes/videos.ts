@@ -136,8 +136,8 @@ router.post(
         throw new Error('Failed to create video record');
       }
 
-      // If YouTube, find alternatives in background
       if (parsed.platform === 'youtube') {
+        VideoModel.updateAltSearchStatus(video.id, 'pending');
         void findAlternatives(videoInfo.title, videoInfo.channelName, videoInfo.duration, user.id, video.id);
       }
 
@@ -264,13 +264,13 @@ const CHANNEL_SIM_THRESHOLD = 0.5;
 const TITLE_OVERLAP_THRESHOLD = 0.55;
 const DURATION_DIFF_HARD_LIMIT = 0.05;
 
-async function findAlternatives(
+export async function findAlternatives(
   query: string,
   originalChannel: string,
   originalDuration: number | null,
   userId: number,
   parentId: number
-) {
+): Promise<boolean> {
   try {
     apiLogger.info({ query, parentId }, 'Starting background search for alternatives');
 
@@ -291,7 +291,6 @@ async function findAlternatives(
 
     scored.sort((a, b) => b.score - a.score);
 
-    // DEBUG: log all scored candidates
     apiLogger.info(
       { parentId, candidates: scored.map(s => ({
         title: (s.alt.title ?? '').slice(0, 40),
@@ -301,16 +300,15 @@ async function findAlternatives(
         durSim: +s.durSim.toFixed(2),
         score: +s.score.toFixed(2),
       })) },
-      '[DEBUG] Alt candidates scored'
+      'Alt candidates scored'
     );
 
+    let addedCount = 0;
     const addedPerPlatform = new Set<string>();
     for (const { alt, chSim, titleOvr, durSim } of scored) {
       if (addedPerPlatform.has(alt.platform)) continue;
-      const isChannelOk = chSim >= CHANNEL_SIM_THRESHOLD;
-      const isTitleOk = titleOvr >= TITLE_OVERLAP_THRESHOLD;
 
-      if (!isTitleOk) {
+      if (titleOvr < TITLE_OVERLAP_THRESHOLD) {
         apiLogger.debug(
           { title: alt.title, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2), durSim: durSim.toFixed(2) },
           'Skipping alt: title below threshold'
@@ -349,6 +347,7 @@ async function findAlternatives(
         parentId
       });
       addedPerPlatform.add(alt.platform);
+      addedCount++;
       apiLogger.info(
         {
           title: alt.title,
@@ -360,10 +359,68 @@ async function findAlternatives(
         'Added alternative video'
       );
     }
+
+    const status = addedCount > 0 ? 'found' : 'not_found';
+    VideoModel.updateAltSearchStatus(parentId, status);
+    return addedCount > 0;
   } catch (err) {
     apiLogger.warn({ error: getErrorMessage(err) }, '[AltSearch] Background search failed');
+    VideoModel.updateAltSearchStatus(parentId, 'error');
+    return false;
   }
 }
+
+// Manual alt search
+router.post(
+  '/:id/search-alt',
+  async (
+    req: Request<{ id: string }>,
+    res: Response<{ found: boolean } | ErrorResponse>
+  ): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const telegramId = req.telegramUser?.id;
+
+      if (!telegramId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const user = UserModel.findByTelegramId(telegramId);
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const videoId = Number.parseInt(id, 10);
+      const video = VideoModel.findById(videoId);
+
+      if (!video || video.user_id !== user.id) {
+        res.status(404).json({ error: 'Video not found' });
+        return;
+      }
+
+      if (video.platform !== 'youtube') {
+        res.status(400).json({ error: 'Alt search only for YouTube videos' });
+        return;
+      }
+
+      VideoModel.updateAltSearchStatus(videoId, 'pending');
+      const found = await findAlternatives(
+        video.title,
+        video.channel_name ?? '',
+        video.duration,
+        user.id,
+        videoId
+      );
+
+      res.json({ found });
+    } catch (error) {
+      apiLogger.error({ error: getErrorMessage(error) }, 'Manual alt search error');
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
 
 // Delete video
 router.delete(

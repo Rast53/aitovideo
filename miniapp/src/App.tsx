@@ -82,6 +82,19 @@ function App() {
     }
   };
 
+  const handleSearchAlt = async (id: number): Promise<boolean> => {
+    try {
+      const result = await api.searchAlternatives(id);
+      if (result.found) {
+        await loadData();
+      }
+      return result.found;
+    } catch (err) {
+      console.error('Failed to search alternatives:', err);
+      return false;
+    }
+  };
+
   const handleVideoClick = (video: Video): void => {
     setSelectedVideo(video);
   };
@@ -114,6 +127,7 @@ function App() {
           onVideoClick={handleVideoClick}
           onDelete={handleDelete}
           onMarkWatched={handleMarkWatched}
+          onSearchAlt={handleSearchAlt}
           activeTab={activeTab}
         />
       </main>

@@ -1,4 +1,5 @@
 export type VideoPlatform = 'youtube' | 'rutube' | 'vk';
+export type AltSearchStatus = 'pending' | 'found' | 'not_found' | 'error';
 
 export interface Video {
   id: number;
@@ -12,6 +13,7 @@ export interface Video {
   duration: number | null;
   is_watched: number | boolean;
   parent_id: number | null;
+  alt_search_status: AltSearchStatus | null;
   created_at: string;
 }
 
@@ -57,4 +59,8 @@ export interface GetProgressResponse {
 
 export interface SaveProgressResponse {
   progress: VideoProgress;
+}
+
+export interface SearchAltResponse {
+  found: boolean;
 }

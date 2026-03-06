@@ -2,6 +2,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { apiLogger } from '../logger.js';
+import { startAltRetryScheduler } from '../services/alt-retry-scheduler.js';
 import { optionalTelegramAuth, telegramAuthMiddleware } from './middleware/auth.js';
 import progressRouter from './routes/progress.js';
 import proxyRouter from './routes/proxy.js';
@@ -71,6 +72,7 @@ app.use((req: Request, res: Response) => {
 
 app.listen(PORT, () => {
   apiLogger.info({ port: PORT, env: process.env.NODE_ENV ?? 'development' }, 'API server started');
+  startAltRetryScheduler();
 });
 
 export default app;

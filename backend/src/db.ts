@@ -80,6 +80,16 @@ function runMigrations(): void {
     );
     console.log('[db] Migration: added parent_id column to videos');
   }
+
+  if (!existingCols.includes('alt_search_status')) {
+    db.exec(
+      "ALTER TABLE videos ADD COLUMN alt_search_status TEXT DEFAULT NULL"
+    );
+    db.exec(
+      "UPDATE videos SET alt_search_status = 'pending' WHERE platform = 'youtube' AND parent_id IS NULL AND alt_search_status IS NULL"
+    );
+    console.log('[db] Migration: added alt_search_status column to videos');
+  }
 }
 
 /** One-time fix: replace HTML-encoded & (&amp;) in thumbnail URLs saved before entity decoding was applied */

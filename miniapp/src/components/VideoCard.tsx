@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import type { Video, VideoPlatform } from '../types/api';
 import { YouTubeIcon, VKIcon, RutubeIcon } from './icons/index.js';
 import './VideoCard.css';
@@ -45,10 +45,12 @@ interface VideoCardProps {
   onClick?: (video: Video) => void;
   onDelete?: (id: number) => void;
   onMarkWatched?: (id: number, isWatched: boolean) => void;
+  onSearchAlt?: (id: number) => Promise<boolean>;
 }
 
-export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkWatched }: VideoCardProps) {
+export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkWatched, onSearchAlt }: VideoCardProps) {
   const isWatched = Boolean(video.is_watched);
+  const [searching, setSearching] = useState(false);
 
   const handleDelete = (event: MouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation();
@@ -65,6 +67,17 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
   const handleAltClick = (event: MouseEvent, altVideo: Video): void => {
     event.stopPropagation();
     onClick?.(altVideo);
+  };
+
+  const handleSearchAlt = async (event: MouseEvent<HTMLButtonElement>): Promise<void> => {
+    event.stopPropagation();
+    if (!onSearchAlt || searching) return;
+    setSearching(true);
+    try {
+      await onSearchAlt(video.id);
+    } finally {
+      setSearching(false);
+    }
   };
 
   const thumbnailSrc = getThumbnailSrc(video);
@@ -131,6 +144,15 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
         >
           ✓ {isWatched ? 'Просмотрено' : 'Просмотрено'}
         </button>
+        {video.platform === 'youtube' && alternatives.length === 0 && onSearchAlt && (
+          <button
+            className="video-action-btn"
+            onClick={handleSearchAlt}
+            disabled={searching}
+          >
+            {searching ? '⏳ Поиск…' : '🔍 Найти'}
+          </button>
+        )}
         <button className="video-action-btn" onClick={handleDelete}>
           🗑 Удалить
         </button>
