@@ -90,6 +90,16 @@ function runMigrations(): void {
     );
     console.log('[db] Migration: added alt_search_status column to videos');
   }
+
+  // Ensure cascade-delete trigger exists on existing databases (#59)
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS delete_alternatives_on_parent_delete
+    AFTER DELETE ON videos
+    WHEN OLD.parent_id IS NULL
+    BEGIN
+      DELETE FROM videos WHERE parent_id = OLD.id;
+    END
+  `);
 }
 
 /** One-time fix: replace HTML-encoded & (&amp;) in thumbnail URLs saved before entity decoding was applied */
