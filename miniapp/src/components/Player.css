@@ -23,7 +23,7 @@
   inset: 0;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.95);
-  touch-action: none;
+  /* touch-action: none removed — was blocking YouTube native controls clicks */
 }
 
 .player-media-content {
