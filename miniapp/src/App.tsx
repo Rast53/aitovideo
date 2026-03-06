@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { Player } from './components/Player';
 import { TabBar } from './components/TabBar';
@@ -102,6 +102,24 @@ function App() {
   const handleClosePlayer = (): void => {
     setSelectedVideo(null);
   };
+
+  const closePlayerRef = useRef(handleClosePlayer);
+  closePlayerRef.current = handleClosePlayer;
+
+  useEffect(() => {
+    if (!selectedVideo) return;
+    const tg = window.Telegram?.WebApp;
+    if (!tg?.BackButton) return;
+
+    tg.BackButton.show();
+    const handler = () => { closePlayerRef.current(); };
+    tg.BackButton.onClick(handler);
+
+    return () => {
+      tg.BackButton!.offClick(handler);
+      tg.BackButton!.hide();
+    };
+  }, [selectedVideo]);
 
   if (error) {
     return (

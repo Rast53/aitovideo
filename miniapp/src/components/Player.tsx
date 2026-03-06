@@ -11,20 +11,6 @@ interface PlayerProps {
   onClose: () => void;
 }
 
-type ExtendedDocument = Document & {
-  webkitFullscreenElement?: Element;
-  webkitExitFullscreen?: () => void;
-};
-
-type ExtendedHTMLElement = HTMLElement & {
-  webkitRequestFullscreen?: () => void;
-};
-
-type ExtendedScreenOrientation = ScreenOrientation & {
-  lock?: (orientation: string) => Promise<void>;
-  unlock?: () => void;
-};
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(totalSeconds: number): string {
@@ -129,8 +115,11 @@ export function Player({ video, onClose }: PlayerProps) {
     }
   }
 
+  const isIframePlatform = video.platform === 'rutube' || video.platform === 'vk';
+
   function restartBackButtonHideTimer() {
     clearBackButtonHideTimer();
+    if (isIframePlatform) return;
     backButtonHideTimerRef.current = window.setTimeout(() => {
       setIsBackButtonVisible(false);
       backButtonHideTimerRef.current = null;
@@ -237,45 +226,6 @@ export function Player({ video, onClose }: PlayerProps) {
       if (pos >= MIN_RESUME_SECONDS) {
         api.saveProgress(videoIdRef.current, pos).catch(() => {});
       }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Enter fullscreen on mount ─────────────────────────────────────────────
-  useEffect(() => {
-    const enterFullscreen = async () => {
-      if (window.Telegram?.WebApp?.requestFullscreen) {
-        try { window.Telegram.WebApp.requestFullscreen(); } catch { /* */ }
-      }
-      const el = wrapperRef.current as ExtendedHTMLElement | null;
-      if (el && !document.fullscreenElement) {
-        try {
-          if (el.requestFullscreen) await el.requestFullscreen();
-          else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-        } catch { /* */ }
-      }
-      try {
-        const o = screen.orientation as ExtendedScreenOrientation;
-        if (o?.lock) await o.lock('landscape');
-      } catch { /* */ }
-    };
-
-    void enterFullscreen();
-
-    return () => {
-      if (window.Telegram?.WebApp?.exitFullscreen) {
-        try { window.Telegram.WebApp.exitFullscreen(); } catch { /* */ }
-      }
-      const doc = document as ExtendedDocument;
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      } else if (doc.webkitFullscreenElement && doc.webkitExitFullscreen) {
-        try { doc.webkitExitFullscreen(); } catch { /* */ }
-      }
-      try {
-        const o = screen.orientation as ExtendedScreenOrientation;
-        if (o?.unlock) o.unlock();
-      } catch { /* */ }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

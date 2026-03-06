@@ -4,6 +4,14 @@ interface TelegramWebAppThemeParams {
   bg_color?: string;
 }
 
+interface TelegramBackButton {
+  show: () => void;
+  hide: () => void;
+  onClick: (cb: () => void) => void;
+  offClick: (cb: () => void) => void;
+  isVisible: boolean;
+}
+
 interface TelegramWebApp {
   initData: string;
   themeParams: TelegramWebAppThemeParams;
@@ -18,6 +26,7 @@ interface TelegramWebApp {
   exitFullscreen?: () => void;
   /** Bot API 7.7+: true если Mini App в полноэкранном режиме */
   isFullscreen?: boolean;
+  BackButton?: TelegramBackButton;
 }
 
 interface TelegramNamespace {
