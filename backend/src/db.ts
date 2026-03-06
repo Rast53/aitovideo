@@ -68,6 +68,16 @@ function initTables(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_videos_user_id ON videos(user_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_progress_user_video ON video_progress(user_id, video_id)');
+
+  // When a parent video is deleted, cascade-delete its alternatives (#59)
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS delete_alternatives_on_parent_delete
+    AFTER DELETE ON videos
+    WHEN OLD.parent_id IS NULL
+    BEGIN
+      DELETE FROM videos WHERE parent_id = OLD.id;
+    END
+  `);
 }
 
 /** Additive migrations for existing databases (ALTER TABLE for new columns) */

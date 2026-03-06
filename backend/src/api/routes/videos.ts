@@ -308,6 +308,8 @@ export async function findAlternatives(
     for (const { alt, chSim, titleOvr, durSim } of scored) {
       if (addedPerPlatform.has(alt.platform)) continue;
 
+      if (VideoModel.findAltByPlatform(parentId, alt.platform)) continue;
+
       if (titleOvr < TITLE_OVERLAP_THRESHOLD) {
         apiLogger.debug(
           { title: alt.title, chSim: chSim.toFixed(2), titleOvr: titleOvr.toFixed(2), durSim: durSim.toFixed(2) },

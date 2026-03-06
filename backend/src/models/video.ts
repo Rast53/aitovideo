@@ -108,6 +108,12 @@ export const VideoModel = {
     return Boolean(
       db.prepare('SELECT 1 FROM videos WHERE parent_id = ? LIMIT 1').get(videoId)
     );
+  },
+
+  findAltByPlatform(parentId: number, platform: VideoPlatform): Video | undefined {
+    return db
+      .prepare('SELECT * FROM videos WHERE parent_id = ? AND platform = ? LIMIT 1')
+      .get(parentId, platform) as Video | undefined;
   }
 };
 
