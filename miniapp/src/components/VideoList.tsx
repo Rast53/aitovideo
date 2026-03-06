@@ -5,6 +5,7 @@ import './VideoList.css';
 
 interface VideoListProps {
   videos: Video[];
+  allVideos?: Video[];
   onVideoClick?: (video: Video) => void;
   onDelete?: (id: number) => void;
   onMarkWatched?: (id: number, isWatched: boolean) => void;
@@ -37,6 +38,7 @@ const EMPTY_STATE: Record<Tab, { icon: string; title: string; message: string }>
 
 export function VideoList({
   videos,
+  allVideos,
   onVideoClick,
   onDelete,
   onMarkWatched,
@@ -67,11 +69,12 @@ export function VideoList({
   }
 
   const rootVideos = videos.filter((v) => !v.parent_id);
+  const altSource = allVideos ?? videos;
 
   return (
     <div className="video-list">
       {rootVideos.map((video) => {
-        const alternatives = videos.filter((alt) => alt.parent_id === video.id);
+        const alternatives = altSource.filter((alt) => alt.parent_id === video.id);
         return (
           <VideoCard
             key={video.id}
