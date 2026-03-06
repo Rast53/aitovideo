@@ -69,3 +69,17 @@ jobs:
           YTDLP_PROXY: ${{ secrets.YTDLP_PROXY }}
           YANDEX_SEARCH_API_KEY: ${{ secrets.YANDEX_SEARCH_API_KEY }}
           YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+
+      - name: Notify Telegram
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          COMMIT_MSG=$(echo "${{ github.event.head_commit.message }}" | head -1)
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "$STATUS" = "success" ]; then
+            TEXT="✅ aitovideo задеплоен%0A${COMMIT_MSG}%0A${RUN_URL}"
+          else
+            TEXT="❌ aitovideo деплой упал%0A${COMMIT_MSG}%0A${RUN_URL}"
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.NOTIFY_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.NOTIFY_CHAT_ID }}&text=${TEXT}"
