@@ -18,10 +18,27 @@ agent:
 3. Read `.openclaw/CONSTRAINTS.md` — red lines (DB schema, API format, bot commands)
 4. If `.openclaw/BRAND.md` exists and task touches UI — read it too
 
-## Plan
-- If `.cursor/plans/issue-{{ issue.id }}.md` exists: follow it step by step
-- For M+ tasks without a plan: create `.cursor/plans/issue-{{ issue.id }}.md` first, then implement
-- Commit after each completed plan step: `feat: step K of #{{ issue.id }} — description`
+## Protocol (M+ tasks)
+- Read `.cursor/protocols/TASK-{{ issue.id }}/{context,plan,progress}.md` if exists
+- Follow `plan.md` step by step
+- After each step: update `progress.md` (mark done, set next step), then commit
+- If blocked on a decision: set `status: HALT_BLOCKING` in `progress.md`, describe the question, stop
+- On completion: set `status: SUCCESS` in `progress.md`
+- Commit after each completed step: `feat: step K of #{{ issue.id }} — description`
+
+### progress.md format
+```markdown
+## Status: IN_PROGRESS | SUCCESS | HALT_BLOCKING | HALT_FAILURE
+
+### Completed steps
+- [x] Step 1 — commit abc1234
+
+### Next step
+Step 2: ...
+
+### Blocking question (if HALT_BLOCKING)
+...
+```
 
 ## Verification (mandatory before PR)
 1. Run `./scripts/check.sh` — must pass with no errors
@@ -40,9 +57,10 @@ agent:
 
 ## Retry / Continuation
 - `attempt: null` — first run, use full prompt above
-- `attempt >= 1` — continuation: describe what was done before, continue from where it stopped
-  - Do NOT re-read all context from scratch; focus on what remains
-  - Check git log for completed steps, then continue
+- `attempt >= 1` — continuation: read `.cursor/protocols/TASK-{{ issue.id }}/progress.md`
+  - Continue from "Next step" — do NOT restart from scratch
+  - Check git log to verify what was actually committed in previous attempts
+  - Update `progress.md` as you complete each remaining step
 
 ## Constraints (summary — full list in .openclaw/CONSTRAINTS.md)
 - ❌ Never drop DB tables/columns without migration
