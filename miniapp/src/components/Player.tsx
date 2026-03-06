@@ -344,12 +344,7 @@ export function Player({ video, onClose }: PlayerProps) {
           </div>
         )}
 
-        {/* ── Bottom bar: video title ────────────────────────────────────── */}
-        {isTopControlsVisible && (
-          <div className="player-bottom-bar">
-            <span className="player-bottom-bar__title">{video.title}</span>
-          </div>
-        )}
+        {/* Bottom bar with title removed — it overlapped YouTube seek bar */}
 
         {/* ── Resume modal ─────────────────────────────────────────────── */}
         {showResumeModal && savedProgress && (
