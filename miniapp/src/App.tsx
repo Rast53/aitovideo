@@ -123,6 +123,7 @@ function App() {
       <main className="app-content">
         <VideoList
           videos={visibleVideos}
+          allVideos={videos}
           loading={loading}
           onVideoClick={handleVideoClick}
           onDelete={handleDelete}
