@@ -303,11 +303,9 @@ export async function findAlternatives(
       'Alt candidates scored'
     );
 
+    // Pick single best alternative across all platforms (highest overall score)
     let addedCount = 0;
-    const addedPerPlatform = new Set<string>();
     for (const { alt, chSim, titleOvr, durSim } of scored) {
-      if (addedPerPlatform.has(alt.platform)) continue;
-
       if (VideoModel.findAltByPlatform(parentId, alt.platform)) continue;
 
       if (titleOvr < TITLE_OVERLAP_THRESHOLD) {
@@ -348,7 +346,6 @@ export async function findAlternatives(
         duration: alt.duration,
         parentId
       });
-      addedPerPlatform.add(alt.platform);
       addedCount++;
       apiLogger.info(
         {
@@ -360,6 +357,7 @@ export async function findAlternatives(
         },
         'Added alternative video'
       );
+      break; // Only the single best alternative
     }
 
     const status = addedCount > 0 ? 'found' : 'not_found';
