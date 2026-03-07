@@ -64,3 +64,8 @@ export interface SaveProgressResponse {
 export interface SearchAltResponse {
   found: boolean;
 }
+
+export interface StreamInfo {
+  streamUrl: string;
+  type: 'mp4' | 'hls';
+}

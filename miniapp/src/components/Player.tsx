@@ -1,3 +1,4 @@
+import Hls from 'hls.js';
 import { useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { api } from '../api';
 import type { Video, VideoPlatform, VideoProgress } from '../types/api';
@@ -8,6 +9,7 @@ const PLAYER_ZOOM_STORAGE_KEY = 'aitovideo.player.zoom';
 
 interface PlayerProps {
   video: Video;
+  alternatives?: Video[];
   onClose: () => void;
 }
 
@@ -49,25 +51,23 @@ function getInitialZoomScale(): number {
   }
 }
 
-/**
- * For YouTube we use our own backend proxy (yt-dlp on VPS) instead of iframes.
- * This returns null for YouTube — the component renders a <video> tag instead.
- */
-function getEmbedUrl(platform: VideoPlatform, externalId: string, startSeconds: number): string | null {
-  const t = Math.floor(startSeconds);
-  switch (platform) {
-    case 'youtube':
-      return null; // handled via <video> + backend proxy
-    case 'rutube':
-      return `https://rutube.ru/play/embed/${externalId}${t > 0 ? `?t=${t}` : ''}`;
-    case 'vk': {
-      const [oid, vid] = externalId.split('_');
-      if (!oid || !vid) return null;
-      return `https://vk.com/video_ext.php?oid=${oid}&id=${vid}&hd=2&autoplay=1`;
-    }
-    default:
-      return null;
-  }
+// ─── Smart source selection ───────────────────────────────────────────────────
+// Prefer alternatives on platforms with better availability / no proxy overhead.
+// Rutube & VK are natively available in target regions; YouTube needs VPS proxy.
+
+const PLATFORM_SCORE: Record<VideoPlatform, number> = {
+  rutube: 3,
+  vk: 2,
+  youtube: 1,
+};
+
+function selectBestSource(video: Video, alternatives: Video[]): Video {
+  const candidates = [video, ...alternatives];
+  return candidates.reduce((best, current) => {
+    const bestScore = PLATFORM_SCORE[best.platform] ?? 0;
+    const currentScore = PLATFORM_SCORE[current.platform] ?? 0;
+    return currentScore > bestScore ? current : best;
+  });
 }
 
 const MIN_RESUME_SECONDS = 10;
@@ -76,14 +76,16 @@ const BACK_BUTTON_HIDE_MS = 3_000;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function Player({ video, onClose }: PlayerProps) {
+export function Player({ video, alternatives = [], onClose }: PlayerProps) {
+  const bestSource = selectBestSource(video, alternatives);
+
   const [loading, setLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
   const [zoomScale, setZoomScale] = useState(getInitialZoomScale);
   const [isPinching, setIsPinching] = useState(false);
   const nativeVideoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
-  // Progress / resume
   const [savedProgress, setSavedProgress] = useState<VideoProgress | null>(null);
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [startFrom, setStartFrom] = useState(0);
@@ -91,7 +93,6 @@ export function Player({ video, onClose }: PlayerProps) {
   const [isBackButtonVisible, setIsBackButtonVisible] = useState(true);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const elapsedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -115,11 +116,8 @@ export function Player({ video, onClose }: PlayerProps) {
     }
   }
 
-  const isIframePlatform = video.platform === 'rutube' || video.platform === 'vk';
-
   function restartBackButtonHideTimer() {
     clearBackButtonHideTimer();
-    if (isIframePlatform) return;
     backButtonHideTimerRef.current = window.setTimeout(() => {
       setIsBackButtonVisible(false);
       backButtonHideTimerRef.current = null;
@@ -211,18 +209,22 @@ export function Player({ video, onClose }: PlayerProps) {
     lastTapTimestampRef.current = 0;
   }, [video.id]);
 
-  // ── Changing YouTube quality should reload stream ──────────────────────────
+  // ── Cleanup HLS instance on unmount or source change ───────────────────────
   useEffect(() => {
-    if (video.platform !== 'youtube') return;
-    setLoading(true);
-    setVideoError(false);
-  }, [video.platform, video.external_id]);
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [video.id]);
 
   // ── Unmount: flush final position ────────────────────────────────────────
   useEffect(() => {
     return () => {
       clearTimers();
-      const pos = elapsedRef.current;
+      const el = nativeVideoRef.current;
+      const pos = el ? Math.floor(el.currentTime) : elapsedRef.current;
       if (pos >= MIN_RESUME_SECONDS) {
         api.saveProgress(videoIdRef.current, pos).catch(() => {});
       }
@@ -230,14 +232,11 @@ export function Player({ video, onClose }: PlayerProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fully hide back button after short delay (remove from DOM, no blocking layer)
+  // Back button auto-hide
   useEffect(() => {
     setIsBackButtonVisible(true);
     restartBackButtonHideTimer();
-
-    return () => {
-      clearBackButtonHideTimer();
-    };
+    return () => { clearBackButtonHideTimer(); };
   }, [video.id]);
 
   // ── Fetch saved progress on mount ─────────────────────────────────────────
@@ -260,16 +259,94 @@ export function Player({ video, onClose }: PlayerProps) {
     return () => { cancelled = true; };
   }, [video.id]);
 
-  // ── Start elapsed timer once playback begins ──────────────────────────────
+  // ── Set up video source once playback is ready ─────────────────────────────
+  useEffect(() => {
+    if (!playbackReady || !nativeVideoRef.current) return;
+
+    let cancelled = false;
+    const videoEl = nativeVideoRef.current;
+
+    async function setupSource() {
+      try {
+        const info = await api.resolveStream(bestSource.platform, bestSource.external_id);
+        if (cancelled) return;
+
+        const fullUrl = `${API_URL}${info.streamUrl}`;
+
+        if (info.type === 'hls') {
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              startPosition: startFrom > 0 ? startFrom : -1,
+            });
+            hlsRef.current = hls;
+            hls.loadSource(fullUrl);
+            hls.attachMedia(videoEl);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+              if (!cancelled) {
+                setLoading(false);
+                videoEl.play().catch(() => {});
+              }
+            });
+            hls.on(Hls.Events.ERROR, (_event, data) => {
+              if (data.fatal && !cancelled) {
+                setLoading(false);
+                setVideoError(true);
+              }
+            });
+          } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+            videoEl.src = fullUrl;
+            if (startFrom > 0) {
+              videoEl.addEventListener('loadedmetadata', () => {
+                videoEl.currentTime = startFrom;
+              }, { once: true });
+            }
+          } else {
+            setLoading(false);
+            setVideoError(true);
+          }
+        } else {
+          videoEl.src = fullUrl;
+          if (startFrom > 0) {
+            videoEl.addEventListener('loadedmetadata', () => {
+              videoEl.currentTime = startFrom;
+            }, { once: true });
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setLoading(false);
+          setVideoError(true);
+        }
+      }
+    }
+
+    void setupSource();
+
+    return () => {
+      cancelled = true;
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [playbackReady, bestSource.platform, bestSource.external_id, startFrom]);
+
+  // ── Start elapsed timer + periodic save once playback begins ───────────────
   useEffect(() => {
     if (!playbackReady) return;
 
     elapsedRef.current = startFrom;
 
-    timerRef.current = setInterval(() => { elapsedRef.current += 1; }, 1000);
+    timerRef.current = setInterval(() => {
+      const el = nativeVideoRef.current;
+      if (el && !el.paused) {
+        elapsedRef.current = Math.floor(el.currentTime);
+      }
+    }, 1000);
 
     saveTimerRef.current = setInterval(() => {
-      const pos = elapsedRef.current;
+      const el = nativeVideoRef.current;
+      const pos = el ? Math.floor(el.currentTime) : elapsedRef.current;
       if (pos >= MIN_RESUME_SECONDS) {
         api.saveProgress(videoIdRef.current, pos).catch(() => {});
       }
@@ -292,27 +369,9 @@ export function Player({ video, onClose }: PlayerProps) {
     api.saveProgress(video.id, 0).catch(() => {});
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // ── Set currentTime for YouTube native video on load ─────────────────────
-  useEffect(() => {
-    if (video.platform !== 'youtube' || !playbackReady || !nativeVideoRef.current) return;
-    const el = nativeVideoRef.current;
-    const onMeta = () => {
-      if (startFrom > 0) el.currentTime = startFrom;
-    };
-    el.addEventListener('loadedmetadata', onMeta);
-    return () => el.removeEventListener('loadedmetadata', onMeta);
-  }, [video.platform, playbackReady, startFrom]);
-
   if (!video) return null;
 
   const isProgressLoading = !showResumeModal && !playbackReady;
-  const isYoutube = video.platform === 'youtube';
-  const embedUrl = playbackReady ? getEmbedUrl(video.platform, video.external_id, startFrom) : null;
-  // YouTube stream goes through our backend proxy
-  const youtubeStreamUrl = playbackReady && isYoutube
-    ? `${API_URL}/api/youtube/stream/${video.external_id}`
-    : null;
   const isTopControlsVisible = isBackButtonVisible;
 
   const resumeProgressFraction = savedProgress && video.duration
@@ -343,8 +402,6 @@ export function Player({ video, onClose }: PlayerProps) {
             </button>
           </div>
         )}
-
-        {/* Bottom bar with title removed — it overlapped YouTube seek bar */}
 
         {/* ── Resume modal ─────────────────────────────────────────────── */}
         {showResumeModal && savedProgress && (
@@ -392,12 +449,10 @@ export function Player({ video, onClose }: PlayerProps) {
             className={`player-media-content${isPinching ? ' player-media-content--pinching' : ''}`}
             style={{ transform: `scale(${zoomScale})` }}
           >
-            {/* YouTube: native <video> via backend proxy */}
-            {youtubeStreamUrl && !videoError && (
+            {playbackReady && !videoError && (
               <video
                 ref={nativeVideoRef}
                 className="player-native-video"
-                src={youtubeStreamUrl}
                 autoPlay
                 controls
                 playsInline
@@ -405,24 +460,11 @@ export function Player({ video, onClose }: PlayerProps) {
                 onError={() => { setLoading(false); setVideoError(true); }}
               />
             )}
-
-            {/* Rutube / VK: iframe embed */}
-            {embedUrl && (
-              <iframe
-                ref={iframeRef}
-                src={embedUrl}
-                title={video.title}
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                allowFullScreen
-                onLoad={() => setLoading(false)}
-              />
-            )}
           </div>
         </div>
 
-        {/* Error / no source */}
-        {!isProgressLoading && !showResumeModal && !embedUrl && (!youtubeStreamUrl || videoError) && (
+        {/* Error state */}
+        {!isProgressLoading && !showResumeModal && videoError && (
           <div className="player-error">Не удалось загрузить видео</div>
         )}
 

@@ -91,6 +91,22 @@
   -webkit-backdrop-filter: blur(4px);
 }
 
+.video-platform-badge__icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.video-platform-badge__icon .platform-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.video-platform-badge__name {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .video-platform-badge .platform-icon {
   width: 16px;
   height: 16px;

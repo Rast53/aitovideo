@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # run-agent.sh — запуск Cursor Agent с правильным окружением
 # Usage: ./scripts/run-agent.sh "Task description"
+# Output: /tmp/agent-{project}.log  (readable via cat anytime)
 
 set -e
 
@@ -14,12 +15,16 @@ if [ -z "$TASK" ]; then
 fi
 
 REPO="Rast53/aitovideo"
+PROJECT="aitovideo"
+LOG_FILE="/tmp/agent-${PROJECT}.log"
 STATUS_FILE="/tmp/agent-status.txt"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Agent started: ${TASK:0:80}" > "$STATUS_FILE"
-echo "🤖 Запускаю агента..."
+echo "🤖 Запускаю агента... Лог: $LOG_FILE"
 
-agent -p "$TASK" --trust
+# script -q создаёт настоящий PTY → агент пишет вывод → всё в файле
+# Читать: cat /tmp/agent-aitovideo.log
+script -q -c "agent --trust -p $(printf '%q' "$TASK")" "$LOG_FILE"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Agent finished" >> "$STATUS_FILE"
 
@@ -38,4 +43,4 @@ else
   echo "ℹ️  Открытых PR не найдено, watch не ставлю"
 fi
 
-echo "✅ Готово. Статус: $STATUS_FILE"
+echo "✅ Готово. Лог: $LOG_FILE"

@@ -64,11 +64,6 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
     onMarkWatched?.(video.id, !isWatched);
   };
 
-  const handleAltClick = (event: MouseEvent, altVideo: Video): void => {
-    event.stopPropagation();
-    onClick?.(altVideo);
-  };
-
   const handleSearchAlt = async (event: MouseEvent<HTMLButtonElement>): Promise<void> => {
     event.stopPropagation();
     if (!onSearchAlt || searching) return;
@@ -81,6 +76,14 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
   };
 
   const thumbnailSrc = getThumbnailSrc(video);
+
+  // Collect all unique platform icons (main + alternatives)
+  const allPlatforms: VideoPlatform[] = [video.platform];
+  for (const alt of alternatives) {
+    if (!allPlatforms.includes(alt.platform)) {
+      allPlatforms.push(alt.platform);
+    }
+  }
 
   return (
     <div className="video-card" onClick={() => onClick?.(video)}>
@@ -105,9 +108,17 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
           <span className="video-duration">{formatDuration(video.duration)}</span>
         )}
         {isWatched && <span className="video-watched-badge">✓</span>}
+
+        {/* Dual-icon platform badge: shows all available sources */}
         <span className="video-platform-badge">
-          {platformIconComponents[video.platform]?.(16)}
-          {platformNames[video.platform]}
+          {allPlatforms.map((p) => (
+            <span key={p} className="video-platform-badge__icon" title={platformNames[p]}>
+              {platformIconComponents[p]?.(16)}
+            </span>
+          ))}
+          {allPlatforms.length === 1 && (
+            <span className="video-platform-badge__name">{platformNames[video.platform]}</span>
+          )}
         </span>
       </div>
 
@@ -117,23 +128,6 @@ export function VideoCard({ video, alternatives = [], onClick, onDelete, onMarkW
           <p className="video-channel">
             {video.channel_name ?? 'Unknown'}
           </p>
-
-          {alternatives.length > 0 && (
-            <div className="video-alternatives">
-              <span className="alt-label">Также на:</span>
-              {alternatives.map(alt => (
-                <button
-                  key={alt.id}
-                  className="alt-chip"
-                  onClick={(e) => handleAltClick(e, alt)}
-                  title={platformNames[alt.platform]}
-                >
-                  {platformIconComponents[alt.platform]?.(16)}
-                  <span className="alt-chip-name">{platformNames[alt.platform]}</span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
