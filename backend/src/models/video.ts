@@ -60,11 +60,16 @@ export const VideoModel = {
     return stmt.get(id) as Video | undefined;
   },
 
-  // Delete video
+  // Delete video and its alternatives (cascade, since ON DELETE SET NULL fires before triggers)
   delete(id: number, userId: number): boolean {
-    const stmt = db.prepare('DELETE FROM videos WHERE id = ? AND user_id = ?');
-    const result = stmt.run(id, userId);
-    return result.changes > 0;
+    const deleteWithCascade = db.transaction(() => {
+      // Delete alternatives first (child rows)
+      db.prepare('DELETE FROM videos WHERE parent_id = ?').run(id);
+      // Delete the video itself
+      const result = db.prepare('DELETE FROM videos WHERE id = ? AND user_id = ?').run(id, userId);
+      return result.changes > 0;
+    });
+    return deleteWithCascade();
   },
 
   // Mark as watched
