@@ -6,7 +6,8 @@ import type {
   GetVideosResponse,
   MarkAsWatchedResponse,
   SaveProgressResponse,
-  SearchAltResponse
+  SearchAltResponse,
+  StreamInfo
 } from './types/api';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
@@ -68,7 +69,10 @@ export const api = {
   searchAlternatives: (videoId: number): Promise<SearchAltResponse> =>
     fetchWithAuth<SearchAltResponse>(`/api/videos/${videoId}/search-alt`, {
       method: 'POST'
-    })
+    }),
+
+  resolveStream: (platform: string, externalId: string): Promise<StreamInfo> =>
+    fetchWithAuth<StreamInfo>(`/api/stream/${platform}/${externalId}/resolve`)
 };
 
 export default api;

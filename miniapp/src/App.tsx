@@ -154,6 +154,7 @@ function App() {
       {selectedVideo && (
         <Player
           video={selectedVideo}
+          alternatives={videos.filter((v) => v.parent_id === selectedVideo.id)}
           onClose={handleClosePlayer}
         />
       )}
