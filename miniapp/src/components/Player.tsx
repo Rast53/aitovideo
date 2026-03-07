@@ -328,6 +328,14 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      // Reset video element so stale source doesn't show while new one loads
+      if (nativeVideoRef.current) {
+        nativeVideoRef.current.pause();
+        nativeVideoRef.current.removeAttribute('src');
+        nativeVideoRef.current.load();
+      }
+      setLoading(true);
+      setVideoError(false);
     };
   }, [playbackReady, bestSource.platform, bestSource.external_id, startFrom]);
 
