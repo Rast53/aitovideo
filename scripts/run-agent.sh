@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
-# run-agent.sh — запуск Cursor Agent с правильным окружением
-# Usage: ./scripts/run-agent.sh "Task description"
-# Output: /tmp/agent-{project}.log  (readable via cat anytime)
+# run-agent.sh — запуск Cursor Agent в headless режиме (--print)
+#
+# Usage: ./scripts/run-agent.sh "Task description" [branch-name]
+#
+# Output: читается через process(log) в OpenClaw — вывод в реальном времени
+# Log:    /tmp/agent-aitovideo.log (дублируется для истории)
+#
+# Режим:  --print (headless, stdout) + --worktree (изолированный worktree)
+#         Агент работает в ~/.cursor/worktrees/aitovideo/<branch>,
+#         не трогает master. По завершении — коммит и PR.
 
 set -e
 
@@ -9,22 +16,29 @@ export PATH="$PATH:/root/.local/bin"
 export CURSOR_API_KEY=$(grep CURSOR_API_KEY /root/.openclaw/credentials/cursor.env | cut -d'=' -f2)
 
 TASK="${1:-}"
+BRANCH="${2:-}"
+
 if [ -z "$TASK" ]; then
-  echo "Usage: $0 'Task description'"
+  echo "Usage: $0 'Task description' [branch-name]"
   exit 1
 fi
 
 REPO="Rast53/aitovideo"
-PROJECT="aitovideo"
-LOG_FILE="/tmp/agent-${PROJECT}.log"
+LOG_FILE="/tmp/agent-aitovideo.log"
 STATUS_FILE="/tmp/agent-status.txt"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Agent started: ${TASK:0:80}" > "$STATUS_FILE"
-echo "🤖 Запускаю агента... Лог: $LOG_FILE"
+echo "🤖 Запускаю агента (headless --print mode)..."
+echo "   Лог: $LOG_FILE"
 
-# script -q создаёт настоящий PTY → агент пишет вывод → всё в файле
-# Читать: cat /tmp/agent-aitovideo.log
-script -q -c "agent --trust -p $(printf '%q' "$TASK")" "$LOG_FILE"
+# Формируем аргументы worktree
+WORKTREE_ARGS=""
+if [ -n "$BRANCH" ]; then
+  WORKTREE_ARGS="--worktree $BRANCH --worktree-base master"
+fi
+
+# Запуск: --print даёт stdout, tee дублирует в файл
+agent --trust --print $WORKTREE_ARGS -p "$TASK" 2>&1 | tee "$LOG_FILE"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Agent finished" >> "$STATUS_FILE"
 
