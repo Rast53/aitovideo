@@ -6,6 +6,28 @@ import './Player.css';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
 const PLAYER_ZOOM_STORAGE_KEY = 'aitovideo.player.zoom';
+const PLAYER_QUALITY_STORAGE_KEY = 'aitovideo.player.quality';
+const PLAYER_SPEED_STORAGE_KEY = 'aitovideo.player.speed';
+const PLAYER_USE_ALT_STORAGE_KEY = 'aitovideo.player.useAlt';
+
+const QUALITY_OPTIONS = [360, 480, 720, 1080, 1440, 2160] as const;
+type QualityOption = (typeof QUALITY_OPTIONS)[number];
+const QUALITY_LABELS: Record<QualityOption, string> = {
+  360: '360p', 480: '480p', 720: '720p', 1080: '1080p', 1440: '2K', 2160: '4K',
+};
+
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
+type SpeedOption = (typeof SPEED_OPTIONS)[number];
+
+function lsGet<T>(key: string, fallback: T, parse: (v: string) => T): T {
+  try {
+    const v = window.localStorage.getItem(key);
+    return v !== null ? parse(v) : fallback;
+  } catch { return fallback; }
+}
+function lsSet(key: string, value: string | number | boolean): void {
+  try { window.localStorage.setItem(key, String(value)); } catch { /* noop */ }
+}
 
 interface PlayerProps {
   video: Video;
@@ -77,7 +99,28 @@ const BACK_BUTTON_HIDE_MS = 3_000;
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function Player({ video, alternatives = [], onClose }: PlayerProps) {
-  const bestSource = selectBestSource(video, alternatives);
+  // ── Player controls state ──────────────────────────────────────────────────
+  const [preferredQuality, setPreferredQuality] = useState<QualityOption>(
+    () => lsGet(PLAYER_QUALITY_STORAGE_KEY, 1080 as QualityOption, (v) => {
+      const n = parseInt(v, 10);
+      return (QUALITY_OPTIONS as readonly number[]).includes(n) ? n as QualityOption : 1080;
+    })
+  );
+  const [playbackSpeed, setPlaybackSpeed] = useState<SpeedOption>(
+    () => lsGet(PLAYER_SPEED_STORAGE_KEY, 1 as SpeedOption, (v) => {
+      const n = parseFloat(v);
+      return (SPEED_OPTIONS as readonly number[]).includes(n) ? n as SpeedOption : 1;
+    })
+  );
+  const [useAlt, setUseAlt] = useState<boolean>(
+    () => lsGet(PLAYER_USE_ALT_STORAGE_KEY, true, (v) => v !== 'false')
+  );
+  const [openMenu, setOpenMenu] = useState<'quality' | 'speed' | null>(null);
+
+  // Effective source: if useAlt and alternatives exist, use selectBestSource; else use original
+  const effectiveSource = useAlt ? selectBestSource(video, alternatives) : video;
+  const hasAlternatives = alternatives.length > 0;
+  const isNativeVideo = effectiveSource.platform === 'youtube';
 
   const [loading, setLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
@@ -268,7 +311,8 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
 
     async function setupSource() {
       try {
-        const info = await api.resolveStream(bestSource.platform, bestSource.external_id);
+        const qualityParam = effectiveSource.platform === 'youtube' ? preferredQuality : undefined;
+        const info = await api.resolveStream(effectiveSource.platform, effectiveSource.external_id, qualityParam);
         if (cancelled) return;
 
         const fullUrl = `${API_URL}${info.streamUrl}`;
@@ -337,7 +381,7 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
       setLoading(true);
       setVideoError(false);
     };
-  }, [playbackReady, bestSource.platform, bestSource.external_id, startFrom]);
+  }, [playbackReady, effectiveSource.platform, effectiveSource.external_id, startFrom, preferredQuality]);
 
   // ── Start elapsed timer + periodic save once playback begins ───────────────
   useEffect(() => {
@@ -362,6 +406,21 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
 
     return clearTimers;
   }, [playbackReady, startFrom]);
+
+  // ── Apply playback speed ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (nativeVideoRef.current) {
+      nativeVideoRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
+
+  // ── Persist controls preferences ───────────────────────────────────────────
+  useEffect(() => { lsSet(PLAYER_QUALITY_STORAGE_KEY, preferredQuality); }, [preferredQuality]);
+  useEffect(() => { lsSet(PLAYER_SPEED_STORAGE_KEY, playbackSpeed); }, [playbackSpeed]);
+  useEffect(() => { lsSet(PLAYER_USE_ALT_STORAGE_KEY, useAlt); }, [useAlt]);
+
+  // ── Reset when quality changes (reload stream) ─────────────────────────────
+  // (handled by dependency in setupSource effect above)
 
   // ── Resume handlers ───────────────────────────────────────────────────────
   const handleResumeYes = () => {
@@ -395,7 +454,7 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
         ref={wrapperRef}
       >
 
-        {/* ── Top controls: back ─────────────────────────────────────────── */}
+        {/* ── Top controls ───────────────────────────────────────────────── */}
         {isTopControlsVisible && (
           <div className="player-top-controls">
             <button
@@ -408,7 +467,91 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
                 <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
               </svg>
             </button>
+
+            <div className="player-controls-right">
+              {/* Quality selector — YouTube only */}
+              {isNativeVideo && (
+                <div className="player-control-wrap">
+                  <button
+                    type="button"
+                    className="player-control-btn"
+                    onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'quality' ? null : 'quality'); }}
+                    aria-label="Качество видео"
+                  >
+                    {QUALITY_LABELS[preferredQuality]} ▾
+                  </button>
+                  {openMenu === 'quality' && (
+                    <div className="player-control-popup" onClick={(e) => e.stopPropagation()}>
+                      {QUALITY_OPTIONS.map((q) => (
+                        <button
+                          key={q}
+                          type="button"
+                          className={`player-control-popup__item${q === preferredQuality ? ' player-control-popup__item--active' : ''}`}
+                          onClick={() => {
+                            setPreferredQuality(q);
+                            setOpenMenu(null);
+                            // Trigger stream reload
+                            setPlaybackReady(false);
+                            setTimeout(() => setPlaybackReady(true), 50);
+                          }}
+                        >
+                          {QUALITY_LABELS[q]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Speed selector — YouTube native video only */}
+              {isNativeVideo && (
+                <div className="player-control-wrap">
+                  <button
+                    type="button"
+                    className="player-control-btn"
+                    onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'speed' ? null : 'speed'); }}
+                    aria-label="Скорость воспроизведения"
+                  >
+                    {playbackSpeed === 1 ? '1×' : `${playbackSpeed}×`} ▾
+                  </button>
+                  {openMenu === 'speed' && (
+                    <div className="player-control-popup" onClick={(e) => e.stopPropagation()}>
+                      {SPEED_OPTIONS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className={`player-control-popup__item${s === playbackSpeed ? ' player-control-popup__item--active' : ''}`}
+                          onClick={() => { setPlaybackSpeed(s); setOpenMenu(null); }}
+                        >
+                          {s === 1 ? '1×' : `${s}×`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Alt-source toggle — only if alternatives exist */}
+              {hasAlternatives && (
+                <button
+                  type="button"
+                  className={`player-control-btn player-control-btn--alt${useAlt ? ' player-control-btn--alt-on' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); setUseAlt((v) => !v); }}
+                  aria-label={useAlt ? 'Использовать оригинал' : 'Использовать альтернативу'}
+                >
+                  ALT {useAlt ? '●' : '○'}
+                </button>
+              )}
+            </div>
           </div>
+        )}
+
+        {/* Popup backdrop — closes any open menu */}
+        {openMenu && (
+          <div
+            className="player-popup-backdrop"
+            onPointerDown={() => setOpenMenu(null)}
+          />
         )}
 
         {/* ── Resume modal ─────────────────────────────────────────────── */}
