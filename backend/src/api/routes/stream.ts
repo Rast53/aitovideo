@@ -57,11 +57,19 @@ function buildSourceUrl(platform: string, externalId: string): string {
  * Resolve a direct or HLS stream URL via yt-dlp.
  * Prefers progressive MP4 for YouTube/VK; falls back to best for Rutube (often HLS).
  */
+const VALID_QUALITIES = [360, 480, 720, 1080, 1440, 2160] as const;
+type Quality = (typeof VALID_QUALITIES)[number];
+
+function buildYoutubeFormatSelector(quality: Quality): string {
+  return `"best[height<=${quality}][ext=mp4][vcodec!=none][acodec!=none]/best[height<=${quality}][ext=mp4]/best[ext=mp4]/best"`;
+}
+
 async function resolveStreamUrl(
   platform: string,
-  externalId: string
+  externalId: string,
+  quality: Quality = 1080
 ): Promise<{ url: string; isHls: boolean }> {
-  const cacheKey = `${platform}:${externalId}`;
+  const cacheKey = platform === 'youtube' ? `${platform}:${externalId}:${quality}` : `${platform}:${externalId}`;
   const cached = urlCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     return { url: cached.url, isHls: cached.isHls };
@@ -74,7 +82,7 @@ async function resolveStreamUrl(
 
   const formatSelector =
     platform === 'youtube'
-      ? '"best[height<=1080][ext=mp4][vcodec!=none][acodec!=none]/best[height<=1080][ext=mp4]/best[ext=mp4]/best"'
+      ? buildYoutubeFormatSelector(quality)
       : '"best[ext=mp4][protocol!=m3u8][protocol!=m3u8_native]/best[protocol!=m3u8][protocol!=m3u8_native]/best[ext=mp4]/best"';
 
   const cmd = [
@@ -138,6 +146,7 @@ const STREAM_UA =
 
 // ─── GET /api/stream/:platform/:id/resolve ────────────────────────────────────
 // Returns JSON: { streamUrl, type: 'mp4' | 'hls' }
+// Optional query: ?quality=720 (YouTube only, default 1080)
 
 router.get(
   '/:platform/:id/resolve',
@@ -151,18 +160,24 @@ router.get(
       return;
     }
 
+    const requestedQuality = parseInt(String(req.query.quality ?? '1080'), 10);
+    const quality: Quality = (VALID_QUALITIES.includes(requestedQuality as Quality)
+      ? requestedQuality
+      : 1080) as Quality;
+
     try {
-      const { isHls } = await resolveStreamUrl(platform, id);
+      const { isHls } = await resolveStreamUrl(platform, id, quality);
 
       if (isHls) {
-        const { url: hlsUrl } = await resolveStreamUrl(platform, id);
+        const { url: hlsUrl } = await resolveStreamUrl(platform, id, quality);
         res.json({
           streamUrl: `/api/stream/hls-proxy?url=${encodeURIComponent(hlsUrl)}`,
           type: 'hls',
         });
       } else {
+        const qualityParam = platform === 'youtube' ? `?quality=${quality}` : '';
         res.json({
-          streamUrl: `/api/stream/${platform}/${id}/proxy`,
+          streamUrl: `/api/stream/${platform}/${id}/proxy${qualityParam}`,
           type: 'mp4',
         });
       }
@@ -194,8 +209,13 @@ router.get(
       'Stream proxy request'
     );
 
+    const requestedQualityProxy = parseInt(String(req.query.quality ?? '1080'), 10);
+    const qualityProxy: Quality = (VALID_QUALITIES.includes(requestedQualityProxy as Quality)
+      ? requestedQualityProxy
+      : 1080) as Quality;
+
     try {
-      const { url: streamUrl, isHls } = await resolveStreamUrl(platform, id);
+      const { url: streamUrl, isHls } = await resolveStreamUrl(platform, id, qualityProxy);
       if (isHls) {
         res.status(400).json({ error: 'Use HLS proxy for this stream' });
         return;
@@ -223,7 +243,7 @@ router.get(
       });
 
       if (upstream.status === 403 || upstream.status === 410) {
-        urlCache.delete(`${platform}:${id}`);
+        urlCache.delete(platform === 'youtube' ? `${platform}:${id}:${qualityProxy}` : `${platform}:${id}`);
         res.status(502).json({ error: 'Stream URL expired, please retry' });
         return;
       }

@@ -71,8 +71,10 @@ export const api = {
       method: 'POST'
     }),
 
-  resolveStream: (platform: string, externalId: string): Promise<StreamInfo> =>
-    fetchWithAuth<StreamInfo>(`/api/stream/${platform}/${externalId}/resolve`)
+  resolveStream: (platform: string, externalId: string, quality?: number): Promise<StreamInfo> => {
+    const qs = quality ? `?quality=${quality}` : '';
+    return fetchWithAuth<StreamInfo>(`/api/stream/${platform}/${externalId}/resolve${qs}`);
+  }
 };
 
 export default api;
