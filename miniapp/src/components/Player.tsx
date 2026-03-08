@@ -10,8 +10,12 @@ const PLAYER_QUALITY_STORAGE_KEY = 'aitovideo.player.quality';
 const PLAYER_SPEED_STORAGE_KEY = 'aitovideo.player.speed';
 const PLAYER_USE_ALT_STORAGE_KEY = 'aitovideo.player.useAlt';
 
-const QUALITY_OPTIONS = [360, 480, 720, 1080, 1440, 2160] as const;
-type QualityOption = (typeof QUALITY_OPTIONS)[number];
+// YouTube: только прогрессивные форматы (audio+video в одном, без ffmpeg)
+// Rutube/VK: yt-dlp умеет выбирать качество для них тоже
+const QUALITY_OPTIONS_YOUTUBE = [360, 480, 720] as const;
+const QUALITY_OPTIONS_ALL = [360, 480, 720, 1080, 1440, 2160] as const;
+const QUALITY_OPTIONS = QUALITY_OPTIONS_ALL; // тип для localStorage
+type QualityOption = 360 | 480 | 720 | 1080 | 1440 | 2160;
 const QUALITY_LABELS: Record<QualityOption, string> = {
   360: '360p', 480: '480p', 720: '720p', 1080: '1080p', 1440: '2K', 2160: '4K',
 };
@@ -94,7 +98,8 @@ function selectBestSource(video: Video, alternatives: Video[]): Video {
 
 const MIN_RESUME_SECONDS = 10;
 const SAVE_INTERVAL_MS = 10_000;
-const BACK_BUTTON_HIDE_MS = 3_000;
+// Header always visible — controls should be accessible at all times
+// const BACK_BUTTON_HIDE_MS = 3_000;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -120,7 +125,14 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
   // Effective source: if useAlt and alternatives exist, use selectBestSource; else use original
   const effectiveSource = useAlt ? selectBestSource(video, alternatives) : video;
   const hasAlternatives = alternatives.length > 0;
-  const isNativeVideo = effectiveSource.platform === 'youtube';
+  const isYoutube = effectiveSource.platform === 'youtube';
+  // Quality selector available for all platforms via yt-dlp
+  // YouTube: only progressive formats (360/480/720); others: full range
+  const availableQualityOptions = isYoutube ? QUALITY_OPTIONS_YOUTUBE : QUALITY_OPTIONS_ALL;
+  // Clamp preferred quality to what's available for current platform
+  const effectiveQuality = (availableQualityOptions as readonly number[]).includes(preferredQuality)
+    ? preferredQuality
+    : isYoutube ? 720 : preferredQuality;
 
   const [loading, setLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
@@ -133,14 +145,14 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [startFrom, setStartFrom] = useState(0);
   const [playbackReady, setPlaybackReady] = useState(false);
-  const [isBackButtonVisible, setIsBackButtonVisible] = useState(true);
+  const [isBackButtonVisible] = useState(true); // always visible — header stays on screen
 
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const elapsedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const backButtonHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const pinchStartDistanceRef = useRef<number | null>(null);
   const pinchStartScaleRef = useRef(ZOOM_MIN);
   const lastTapTimestampRef = useRef(0);
@@ -152,24 +164,8 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
     if (saveTimerRef.current) { clearInterval(saveTimerRef.current); saveTimerRef.current = null; }
   }
 
-  function clearBackButtonHideTimer() {
-    if (backButtonHideTimerRef.current) {
-      window.clearTimeout(backButtonHideTimerRef.current);
-      backButtonHideTimerRef.current = null;
-    }
-  }
-
-  function restartBackButtonHideTimer() {
-    clearBackButtonHideTimer();
-    backButtonHideTimerRef.current = window.setTimeout(() => {
-      setIsBackButtonVisible(false);
-      backButtonHideTimerRef.current = null;
-    }, BACK_BUTTON_HIDE_MS);
-  }
-
   function handlePlayerInteraction() {
-    setIsBackButtonVisible(true);
-    restartBackButtonHideTimer();
+    // Header always visible, nothing to do
   }
 
   function resetZoom() {
@@ -275,12 +271,7 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Back button auto-hide
-  useEffect(() => {
-    setIsBackButtonVisible(true);
-    restartBackButtonHideTimer();
-    return () => { clearBackButtonHideTimer(); };
-  }, [video.id]);
+  // Header is always visible — no auto-hide timer needed
 
   // ── Fetch saved progress on mount ─────────────────────────────────────────
   useEffect(() => {
@@ -311,8 +302,7 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
 
     async function setupSource() {
       try {
-        const qualityParam = effectiveSource.platform === 'youtube' ? preferredQuality : undefined;
-        const info = await api.resolveStream(effectiveSource.platform, effectiveSource.external_id, qualityParam);
+        const info = await api.resolveStream(effectiveSource.platform, effectiveSource.external_id, effectiveQuality);
         if (cancelled) return;
 
         const fullUrl = `${API_URL}${info.streamUrl}`;
@@ -381,7 +371,7 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
       setLoading(true);
       setVideoError(false);
     };
-  }, [playbackReady, effectiveSource.platform, effectiveSource.external_id, startFrom, preferredQuality]);
+  }, [playbackReady, effectiveSource.platform, effectiveSource.external_id, startFrom, effectiveQuality]);
 
   // ── Start elapsed timer + periodic save once playback begins ───────────────
   useEffect(() => {
@@ -469,67 +459,63 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
             </button>
 
             <div className="player-controls-right">
-              {/* Quality selector — YouTube only */}
-              {isNativeVideo && (
-                <div className="player-control-wrap">
-                  <button
-                    type="button"
-                    className="player-control-btn"
-                    onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'quality' ? null : 'quality'); }}
-                    aria-label="Качество видео"
-                  >
-                    {QUALITY_LABELS[preferredQuality]} ▾
-                  </button>
-                  {openMenu === 'quality' && (
-                    <div className="player-control-popup" onClick={(e) => e.stopPropagation()}>
-                      {QUALITY_OPTIONS.map((q) => (
-                        <button
-                          key={q}
-                          type="button"
-                          className={`player-control-popup__item${q === preferredQuality ? ' player-control-popup__item--active' : ''}`}
-                          onClick={() => {
-                            setPreferredQuality(q);
-                            setOpenMenu(null);
-                            // Trigger stream reload
-                            setPlaybackReady(false);
-                            setTimeout(() => setPlaybackReady(true), 50);
-                          }}
-                        >
-                          {QUALITY_LABELS[q]}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Quality selector — all platforms via yt-dlp */}
+              <div className="player-control-wrap">
+                <button
+                  type="button"
+                  className="player-control-btn"
+                  onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'quality' ? null : 'quality'); }}
+                  aria-label="Качество видео"
+                >
+                  {QUALITY_LABELS[effectiveQuality]} ▾
+                </button>
+                {openMenu === 'quality' && (
+                  <div className="player-control-popup" onClick={(e) => e.stopPropagation()}>
+                    {availableQualityOptions.map((q) => (
+                      <button
+                        key={q}
+                        type="button"
+                        className={`player-control-popup__item${q === effectiveQuality ? ' player-control-popup__item--active' : ''}`}
+                        onClick={() => {
+                          setPreferredQuality(q as QualityOption);
+                          setOpenMenu(null);
+                          // Reload stream with new quality
+                          setPlaybackReady(false);
+                          setTimeout(() => setPlaybackReady(true), 50);
+                        }}
+                      >
+                        {QUALITY_LABELS[q]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              {/* Speed selector — YouTube native video only */}
-              {isNativeVideo && (
-                <div className="player-control-wrap">
-                  <button
-                    type="button"
-                    className="player-control-btn"
-                    onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'speed' ? null : 'speed'); }}
-                    aria-label="Скорость воспроизведения"
-                  >
-                    {playbackSpeed === 1 ? '1×' : `${playbackSpeed}×`} ▾
-                  </button>
-                  {openMenu === 'speed' && (
-                    <div className="player-control-popup" onClick={(e) => e.stopPropagation()}>
-                      {SPEED_OPTIONS.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          className={`player-control-popup__item${s === playbackSpeed ? ' player-control-popup__item--active' : ''}`}
-                          onClick={() => { setPlaybackSpeed(s); setOpenMenu(null); }}
-                        >
-                          {s === 1 ? '1×' : `${s}×`}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Speed selector — native video only (yt-dlp stream → <video>) */}
+              <div className="player-control-wrap">
+                <button
+                  type="button"
+                  className="player-control-btn"
+                  onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'speed' ? null : 'speed'); }}
+                  aria-label="Скорость воспроизведения"
+                >
+                  {playbackSpeed === 1 ? '1×' : `${playbackSpeed}×`} ▾
+                </button>
+                {openMenu === 'speed' && (
+                  <div className="player-control-popup" onClick={(e) => e.stopPropagation()}>
+                    {SPEED_OPTIONS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`player-control-popup__item${s === playbackSpeed ? ' player-control-popup__item--active' : ''}`}
+                        onClick={() => { setPlaybackSpeed(s); setOpenMenu(null); }}
+                      >
+                        {s === 1 ? '1×' : `${s}×`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Alt-source toggle — only if alternatives exist */}
               {hasAlternatives && (

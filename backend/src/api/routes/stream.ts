@@ -60,8 +60,14 @@ function buildSourceUrl(platform: string, externalId: string): string {
 const VALID_QUALITIES = [360, 480, 720, 1080, 1440, 2160] as const;
 type Quality = (typeof VALID_QUALITIES)[number];
 
-function buildYoutubeFormatSelector(quality: Quality): string {
-  return `"best[height<=${quality}][ext=mp4][vcodec!=none][acodec!=none]/best[height<=${quality}][ext=mp4]/best[ext=mp4]/best"`;
+function buildFormatSelector(platform: string, quality: Quality): string {
+  if (platform === 'youtube') {
+    // YouTube: progressive formats only (audio+video combined, no ffmpeg needed)
+    // Max 720p — 1080p requires separate tracks which need muxing
+    return `"best[height<=${quality}][ext=mp4][vcodec!=none][acodec!=none]/best[height<=${quality}][ext=mp4]/best[ext=mp4]/best"`;
+  }
+  // Rutube / VK: prefer quality-limited mp4, fallback to best
+  return `"best[height<=${quality}][ext=mp4]/best[height<=${quality}]/best[ext=mp4]/best"`;
 }
 
 async function resolveStreamUrl(
@@ -69,7 +75,7 @@ async function resolveStreamUrl(
   externalId: string,
   quality: Quality = 1080
 ): Promise<{ url: string; isHls: boolean }> {
-  const cacheKey = platform === 'youtube' ? `${platform}:${externalId}:${quality}` : `${platform}:${externalId}`;
+  const cacheKey = `${platform}:${externalId}:${quality}`;
   const cached = urlCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     return { url: cached.url, isHls: cached.isHls };
@@ -80,10 +86,7 @@ async function resolveStreamUrl(
     : '';
   const sourceUrl = buildSourceUrl(platform, externalId);
 
-  const formatSelector =
-    platform === 'youtube'
-      ? buildYoutubeFormatSelector(quality)
-      : '"best[ext=mp4][protocol!=m3u8][protocol!=m3u8_native]/best[protocol!=m3u8][protocol!=m3u8_native]/best[ext=mp4]/best"';
+  const formatSelector = buildFormatSelector(platform, quality);
 
   const cmd = [
     'yt-dlp',
@@ -243,7 +246,7 @@ router.get(
       });
 
       if (upstream.status === 403 || upstream.status === 410) {
-        urlCache.delete(platform === 'youtube' ? `${platform}:${id}:${qualityProxy}` : `${platform}:${id}`);
+        urlCache.delete(`${platform}:${id}:${qualityProxy}`);
         res.status(502).json({ error: 'Stream URL expired, please retry' });
         return;
       }
