@@ -64,3 +64,9 @@ export interface SaveProgressResponse {
 export interface SearchAltResponse {
   found: boolean;
 }
+
+export interface YoutubeInfoResponse {
+  availableQualities: number[];
+  requestedQuality: number;
+  actualQuality: number;
+}

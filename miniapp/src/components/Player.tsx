@@ -1,13 +1,20 @@
-import { useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { api } from '../api';
 import type { Video, VideoPlatform, VideoProgress } from '../types/api';
 import './Player.css';
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? '';
 const PLAYER_ZOOM_STORAGE_KEY = 'aitovideo.player.zoom';
+const PLAYER_QUALITY_STORAGE_KEY = 'aitovideo.player.quality';
+const PLAYER_SPEED_STORAGE_KEY = 'aitovideo.player.speed';
+
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
 
 interface PlayerProps {
   video: Video;
+  altVideo?: Video;
+  useAlt: boolean;
+  onToggleAlt: () => void;
   onClose: () => void;
 }
 
@@ -49,6 +56,30 @@ function getInitialZoomScale(): number {
   }
 }
 
+function getInitialQuality(): number {
+  if (typeof window === 'undefined') return 1080;
+  try {
+    const v = window.localStorage.getItem(PLAYER_QUALITY_STORAGE_KEY);
+    if (!v) return 1080;
+    const n = parseInt(v, 10);
+    return [360, 480, 720, 1080, 1440, 2160].includes(n) ? n : 1080;
+  } catch {
+    return 1080;
+  }
+}
+
+function getInitialSpeed(): number {
+  if (typeof window === 'undefined') return 1;
+  try {
+    const v = window.localStorage.getItem(PLAYER_SPEED_STORAGE_KEY);
+    if (!v) return 1;
+    const n = parseFloat(v);
+    return (SPEED_OPTIONS as readonly number[]).includes(n) ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
 /**
  * For YouTube we use our own backend proxy (yt-dlp on VPS) instead of iframes.
  * This returns null for YouTube — the component renders a <video> tag instead.
@@ -76,12 +107,19 @@ const BACK_BUTTON_HIDE_MS = 3_000;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function Player({ video, onClose }: PlayerProps) {
+export function Player({ video, altVideo, useAlt, onToggleAlt, onClose }: PlayerProps) {
   const [loading, setLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
   const [zoomScale, setZoomScale] = useState(getInitialZoomScale);
   const [isPinching, setIsPinching] = useState(false);
   const nativeVideoRef = useRef<HTMLVideoElement>(null);
+
+  // Quality & speed controls
+  const [preferredQuality, setPreferredQuality] = useState(getInitialQuality);
+  const [actualQuality, setActualQuality] = useState<number | null>(null);
+  const [availableQualities, setAvailableQualities] = useState<number[]>([]);
+  const [playbackSpeed, setPlaybackSpeed] = useState(getInitialSpeed);
+  const [openMenu, setOpenMenu] = useState<'quality' | 'speed' | null>(null);
 
   // Progress / resume
   const [savedProgress, setSavedProgress] = useState<VideoProgress | null>(null);
@@ -206,6 +244,9 @@ export function Player({ video, onClose }: PlayerProps) {
     setStartFrom(0);
     setPlaybackReady(false);
     setIsPinching(false);
+    setOpenMenu(null);
+    setActualQuality(null);
+    setAvailableQualities([]);
     pinchStartDistanceRef.current = null;
     pinchStartScaleRef.current = ZOOM_MIN;
     lastTapTimestampRef.current = 0;
@@ -216,7 +257,7 @@ export function Player({ video, onClose }: PlayerProps) {
     if (video.platform !== 'youtube') return;
     setLoading(true);
     setVideoError(false);
-  }, [video.platform, video.external_id]);
+  }, [video.platform, video.external_id, preferredQuality]);
 
   // ── Unmount: flush final position ────────────────────────────────────────
   useEffect(() => {
@@ -304,16 +345,77 @@ export function Player({ video, onClose }: PlayerProps) {
     return () => el.removeEventListener('loadedmetadata', onMeta);
   }, [video.platform, playbackReady, startFrom]);
 
+  // ── Fetch YouTube info (available qualities) ───────────────────────────────
+  useEffect(() => {
+    if (video.platform !== 'youtube') {
+      setAvailableQualities([]);
+      setActualQuality(null);
+      return;
+    }
+
+    let cancelled = false;
+    api.getYoutubeInfo(video.external_id, preferredQuality)
+      .then((info) => {
+        if (cancelled) return;
+        setAvailableQualities(info.availableQualities);
+        setActualQuality(info.actualQuality);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAvailableQualities([]);
+          setActualQuality(null);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [video.platform, video.external_id, preferredQuality]);
+
+  // ── Apply playback speed ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!nativeVideoRef.current) return;
+    nativeVideoRef.current.playbackRate = playbackSpeed;
+  }, [playbackSpeed, playbackReady]);
+
+  // ── Persist quality & speed ───────────────────────────────────────────────
+  useEffect(() => {
+    try { window.localStorage.setItem(PLAYER_QUALITY_STORAGE_KEY, String(preferredQuality)); } catch { /* noop */ }
+  }, [preferredQuality]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(PLAYER_SPEED_STORAGE_KEY, String(playbackSpeed)); } catch { /* noop */ }
+  }, [playbackSpeed]);
+
+  // ── Control handlers ──────────────────────────────────────────────────────
+  const handleQualitySelect = useCallback((q: number) => {
+    setPreferredQuality(q);
+    setOpenMenu(null);
+  }, []);
+
+  const handleSpeedSelect = useCallback((s: number) => {
+    setPlaybackSpeed(s);
+    setOpenMenu(null);
+    if (nativeVideoRef.current) nativeVideoRef.current.playbackRate = s;
+  }, []);
+
+  const handleMenuToggle = useCallback((menu: 'quality' | 'speed') => {
+    setOpenMenu(prev => prev === menu ? null : menu);
+  }, []);
+
+  const handlePopupOverlayClick = useCallback(() => {
+    setOpenMenu(null);
+  }, []);
+
   if (!video) return null;
 
   const isProgressLoading = !showResumeModal && !playbackReady;
   const isYoutube = video.platform === 'youtube';
   const embedUrl = playbackReady ? getEmbedUrl(video.platform, video.external_id, startFrom) : null;
-  // YouTube stream goes through our backend proxy
   const youtubeStreamUrl = playbackReady && isYoutube
-    ? `${API_URL}/api/youtube/stream/${video.external_id}`
+    ? `${API_URL}/api/youtube/stream/${video.external_id}?quality=${preferredQuality}`
     : null;
   const isTopControlsVisible = isBackButtonVisible;
+  const displayQuality = actualQuality ?? preferredQuality;
+  const hasAlt = !!altVideo;
 
   const resumeProgressFraction = savedProgress && video.duration
     ? Math.min(savedProgress.position_seconds / video.duration, 1)
@@ -328,7 +430,7 @@ export function Player({ video, onClose }: PlayerProps) {
         ref={wrapperRef}
       >
 
-        {/* ── Top controls: back ─────────────────────────────────────────── */}
+        {/* ── Top controls: back + right-side controls ──────────────────── */}
         {isTopControlsVisible && (
           <div className="player-top-controls">
             <button
@@ -341,6 +443,85 @@ export function Player({ video, onClose }: PlayerProps) {
                 <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
               </svg>
             </button>
+
+            <div className="player-controls-right">
+              {/* Quality selector (YouTube only) */}
+              {isYoutube && (
+                <div className="player-control-wrap">
+                  <button
+                    type="button"
+                    className="player-control-btn"
+                    onClick={() => handleMenuToggle('quality')}
+                  >
+                    {displayQuality}p
+                  </button>
+                  {openMenu === 'quality' && (
+                    <>
+                      <div className="player-control-popup-overlay" onPointerDown={handlePopupOverlayClick} />
+                      <div className="player-control-popup">
+                        {availableQualities.length > 0 ? (
+                          availableQualities.map(q => (
+                            <button
+                              key={q}
+                              type="button"
+                              className={`player-control-popup__item${q === preferredQuality ? ' player-control-popup__item--active' : ''}`}
+                              onClick={() => handleQualitySelect(q)}
+                            >
+                              {q}p
+                            </button>
+                          ))
+                        ) : (
+                          <div className="player-control-popup__item player-control-popup__item--loading">
+                            ...
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Speed selector (YouTube native video only) */}
+              {isYoutube && (
+                <div className="player-control-wrap">
+                  <button
+                    type="button"
+                    className="player-control-btn"
+                    onClick={() => handleMenuToggle('speed')}
+                  >
+                    {playbackSpeed}×
+                  </button>
+                  {openMenu === 'speed' && (
+                    <>
+                      <div className="player-control-popup-overlay" onPointerDown={handlePopupOverlayClick} />
+                      <div className="player-control-popup">
+                        {SPEED_OPTIONS.map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            className={`player-control-popup__item${s === playbackSpeed ? ' player-control-popup__item--active' : ''}`}
+                            onClick={() => handleSpeedSelect(s)}
+                          >
+                            {s}×
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Alt-source toggle */}
+              {hasAlt && (
+                <button
+                  type="button"
+                  className={`player-control-btn player-control-btn--alt${useAlt ? ' player-control-btn--alt-active' : ''}`}
+                  onClick={onToggleAlt}
+                >
+                  ALT {useAlt ? '●' : '○'}
+                </button>
+              )}
+            </div>
           </div>
         )}
 

@@ -85,6 +85,92 @@
   background: rgba(0, 0, 0, 0.8);
 }
 
+/* ── Right-side player controls (quality, speed, alt) ────────────────────── */
+
+.player-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-control-wrap {
+  position: relative;
+}
+
+.player-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 20px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  min-height: 32px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.player-control-btn:active {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.player-control-btn--alt-active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Popup overlay (transparent, closes popup on tap outside) ────────────── */
+
+.player-control-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+}
+
+/* ── Control popup ───────────────────────────────────────────────────────── */
+
+.player-control-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 80px;
+  background: #1a1a2e;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.player-control-popup__item {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  min-height: 44px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+  background: transparent;
+  transition: background 0.1s;
+}
+
+.player-control-popup__item:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.player-control-popup__item--active {
+  color: var(--tg-theme-button-color, #3390ec);
+  font-weight: 600;
+}
+
+.player-control-popup__item--loading {
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+}
+
 /* ── Bottom bar (video title) ──────────────────────────────────────────── */
 
 .player-bottom-bar {

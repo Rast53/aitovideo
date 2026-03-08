@@ -7,6 +7,8 @@ import { VideoList } from './components/VideoList';
 import type { AppUser, Video } from './types/api';
 import './App.css';
 
+const USE_ALT_STORAGE_KEY = 'aitovideo.player.useAlt';
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error';
 }
@@ -16,6 +18,14 @@ function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
+  const [altVideoForPlayer, setAltVideoForPlayer] = useState<Video | null>(null);
+  const [useAltSource, setUseAltSource] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(USE_ALT_STORAGE_KEY) !== 'false';
+    } catch {
+      return true;
+    }
+  });
   const [user, setUser] = useState<AppUser | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('videos');
 
@@ -96,11 +106,44 @@ function App() {
   };
 
   const handleVideoClick = (video: Video): void => {
-    setSelectedVideo(video);
+    let original: Video;
+    let alt: Video | null = null;
+
+    if (video.parent_id !== null) {
+      const parent = videos.find(v => v.id === video.parent_id);
+      original = parent ?? video;
+      alt = video;
+    } else {
+      original = video;
+      alt = videos.find(v => v.parent_id === video.id) ?? null;
+    }
+
+    if (alt && useAltSource) {
+      setSelectedVideo(alt);
+      setAltVideoForPlayer(original);
+    } else {
+      setSelectedVideo(original);
+      setAltVideoForPlayer(alt);
+    }
+  };
+
+  const handleToggleAlt = (): void => {
+    const next = !useAltSource;
+    setUseAltSource(next);
+    try {
+      window.localStorage.setItem(USE_ALT_STORAGE_KEY, String(next));
+    } catch { /* noop */ }
+
+    if (selectedVideo && altVideoForPlayer) {
+      const prev = selectedVideo;
+      setSelectedVideo(altVideoForPlayer);
+      setAltVideoForPlayer(prev);
+    }
   };
 
   const handleClosePlayer = (): void => {
     setSelectedVideo(null);
+    setAltVideoForPlayer(null);
   };
 
   const closePlayerRef = useRef(handleClosePlayer);
@@ -154,6 +197,9 @@ function App() {
       {selectedVideo && (
         <Player
           video={selectedVideo}
+          altVideo={altVideoForPlayer ?? undefined}
+          useAlt={useAltSource}
+          onToggleAlt={handleToggleAlt}
           onClose={handleClosePlayer}
         />
       )}
