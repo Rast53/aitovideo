@@ -439,7 +439,7 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
     <div className="player-overlay" onClick={onClose}>
       <div
         className="player-container"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); setOpenMenu(null); }}
         onPointerDownCapture={handlePlayerInteraction}
         ref={wrapperRef}
       >
@@ -532,13 +532,7 @@ export function Player({ video, alternatives = [], onClose }: PlayerProps) {
           </div>
         )}
 
-        {/* Popup backdrop — closes any open menu */}
-        {openMenu && (
-          <div
-            className="player-popup-backdrop"
-            onPointerDown={() => setOpenMenu(null)}
-          />
-        )}
+
 
         {/* ── Resume modal ─────────────────────────────────────────────── */}
         {showResumeModal && savedProgress && (
