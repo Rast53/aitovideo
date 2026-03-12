@@ -6,25 +6,19 @@ services:
     networks:
       - traefik-net
       - aitovideo-net
-    deploy:
-      replicas: 1
-      update_config:
-        parallelism: 1
-        delay: 10s
-      restart_policy:
-        condition: on-failure
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.aitovideo.rule=Host(`${AITOVIDEO_DOMAIN}`)"
-        - "traefik.http.routers.aitovideo.entrypoints=websecure"
-        - "traefik.http.routers.aitovideo.tls=true"
-        - "traefik.http.routers.aitovideo.tls.certresolver=letsencrypt"
-        - "traefik.http.services.aitovideo.loadbalancer.server.port=80"
-        - "traefik.http.routers.aitovideo.service=aitovideo"
-        - "traefik.swarm.network=traefik-net"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.aitovideo.rule=Host(`${AITOVIDEO_DOMAIN}`)"
+      - "traefik.http.routers.aitovideo.entrypoints=websecure"
+      - "traefik.http.routers.aitovideo.tls=true"
+      - "traefik.http.routers.aitovideo.tls.certresolver=letsencrypt"
+      - "traefik.http.services.aitovideo.loadbalancer.server.port=80"
+      - "traefik.http.routers.aitovideo.service=aitovideo"
 
   backend:
     image: rast53/aitovideo-backend:latest
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -39,14 +33,11 @@ services:
       - backend-data:/app/data
     networks:
       - aitovideo-net
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
 
   bot:
     image: rast53/aitovideo-backend:latest
     command: ["node", "dist/bot/index.js"]
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
       - BOT_TOKEN=${BOT_TOKEN}
@@ -55,10 +46,6 @@ services:
       - VK_SERVICE_TOKEN=${VK_SERVICE_TOKEN:-}
     networks:
       - aitovideo-net
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
 
 volumes:
   backend-data:
@@ -68,4 +55,4 @@ networks:
   traefik-net:
     external: true
   aitovideo-net:
-    driver: overlay
+    driver: bridge
