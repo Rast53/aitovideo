@@ -13,7 +13,7 @@ Telegram Mini App для очереди видео (YouTube, Rutube, VK Video).
 - **Frontend:** React + TypeScript + Vite
 - **Bot:** node-telegram-bot-api
 - **Логирование:** pino + pino-pretty (dev)
-- **Деплой:** Docker Swarm (основной), Docker Compose (legacy)
+- **Деплой:** Docker Compose (VPS)
 
 ## Структура
 ```
@@ -33,17 +33,12 @@ aitovideo/
 ```
 
 ## Деплой
-**Production — Docker Swarm:**
+**Production — Docker Compose (VPS):**
 ```bash
-docker stack deploy -c docker-compose.swarm.yml aitovideo
+cd /opt/aitovideo && docker compose up -d
 ```
 
-**Legacy — Docker Compose:**
-```bash
-docker-compose up -d
-```
-
-**НЕ запускать локально для проверки после деплоя** — только через Swarm.
+**НЕ запускать локально для проверки после деплоя** — только через VPS.
 
 ## База данных
 - SQLite, путь: `backend/data/videos.db`
@@ -79,6 +74,6 @@ apiLogger.error({ err, userId }, 'Something failed');
 
 ## Human review обязателен при
 - Изменении схемы БД (удаление/переименование)
-- Изменении деплой-конфигурации (Swarm stack)
+- Изменении деплой-конфигурации (Compose / VPS)
 - Новых внешних API интеграциях
 - Major обновлениях зависимостей

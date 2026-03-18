@@ -8,23 +8,23 @@ alwaysApply: true
 ## Триггер
 Любое сочетание: маркер деплоя + маркер проблемы.
 
-**Маркеры деплоя:** деплой, deploy, выкат, после выката, swarm, stack deploy, docker.
+**Маркеры деплоя:** деплой, deploy, выкат, после выката, compose, docker.
 **Маркеры проблемы:** баг, ошибка, не работает, сломалось, bug, broken, fails, crash.
 
 ## Алгоритм
 1. Запусти `@debug-fixer` немедленно в том же чате.
 2. Уточни (не блокируй если нет): ожидаемое vs фактическое, шаги воспроизведения, что задеплоили.
-3. Итерации: локализация → фикс или диагностическое логирование → деплой в Swarm → проверка.
+3. Итерации: локализация → фикс или диагностическое логирование → деплой через Docker Compose → проверка.
 
 ## Особенности aitovideo
 - **UI (Mini App) в Telegram** — нельзя автопроверить агентом, нужен человек.
 - **Backend API** — агент проверяет через `curl` к `/health` и эндпоинтам.
 - **Bot** — проверить через отправку тестовой ссылки боту.
-- Логи смотреть через: `docker service logs aitovideo_backend --tail 100`
+- Логи смотреть через: `ssh root@83.217.220.3 'cd /opt/aitovideo && docker compose logs --tail 100'`
 
 ## Деплой после фикса
 ```bash
-docker stack deploy -c docker-compose.swarm.yml aitovideo
+ssh root@83.217.220.3 'cd /opt/aitovideo && docker compose pull && docker compose up -d'
 ```
 
 ## Формат результата

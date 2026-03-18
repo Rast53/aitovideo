@@ -9,14 +9,14 @@ Backend serves API + bot; Mini App is the UI inside Telegram.
 - **Frontend:** React + TypeScript + Vite
 - **Bot:** node-telegram-bot-api
 - **Logging:** pino (structured JSON); use child loggers, NOT console.log
-- **Deploy:** Docker Swarm via Portainer; images pushed to `rast53/*` on Docker Hub
+- **Deploy:** Docker Compose on VPS; images pushed to `rast53/*` on Docker Hub
 
 ## Commands
 | Script | Purpose |
 |---|---|
 | `./scripts/check.sh` | TypeScript type-check (backend + miniapp) |
 | `./scripts/build.sh` | Build Docker images |
-| `./scripts/deploy.sh` | Deploy stack to Swarm |
+| `./scripts/deploy.sh` | Build, push & deploy via Docker Compose on VPS |
 | `./scripts/logs.sh` | Tail service logs |
 | `./scripts/health.sh` | Health-check endpoints |
 | `./scripts/watch-agent.sh` | Monitor agent progress (progress.md → Telegram) |
